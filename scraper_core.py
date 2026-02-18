@@ -15,7 +15,12 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import urllib3
 from bs4 import BeautifulSoup
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     import feedparser as _feedparser
@@ -181,6 +186,18 @@ class ScraperCore:
     def _make_session(self) -> requests.Session:
         session = requests.Session()
         session.headers.update(self._get_headers())
+        session.verify = False
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "HEAD"],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        log.debug("⚠️ SSL non vérifié (mode permissif activé)")
         return session
 
     # ── Extraction de date ─────────────────────────────────────────────────────
@@ -542,29 +559,63 @@ class ScraperCore:
 
         # ── Étape 0 : Connexion page d'accueil ────────────────────────────────
         _log(f"🔍 [{commune}] Connexion → {url}")
-        t0 = time.time()
-        try:
-            time.sleep(random.uniform(self.delai * 0.5, self.delai * 1.5))
-            response = session.get(url, timeout=self.timeout)
-            elapsed_ms = int((time.time() - t0) * 1000)
-            taille = len(response.content)
-            has_body = "<body" in response.text.lower()
 
-            _log(
-                f"   ↳ HTTP {response.status_code} | {taille:,} octets | {elapsed_ms} ms"
-                f" | body={'✅' if has_body else '❌'}"
-            )
-            if taille < 1000:
+        def _connecter(target_url: str) -> Optional[requests.Response]:
+            """Tente une connexion et retourne la Response ou None."""
+            t0 = time.time()
+            try:
+                r = session.get(target_url, timeout=self.timeout)
+                elapsed_ms = int((time.time() - t0) * 1000)
+                taille = len(r.content)
+                has_body = "<body" in r.text.lower()
                 _log(
-                    f"   ⚠️ Contenu suspect ({taille} octets) — possible blocage ou redirection",
-                    "warning",
+                    f"   ↳ HTTP {r.status_code} | {taille:,} octets | {elapsed_ms} ms"
+                    f" | body={'✅' if has_body else '❌'}"
                 )
-            if response.status_code == 403:
-                _log(f"   ❌ Accès refusé (403) — site bloqué", "warning")
-                return []
-            response.raise_for_status()
-        except requests.RequestException as exc:
-            _log(f"   ❌ Erreur connexion {url} : {exc}", "warning")
+                if taille < 1000:
+                    _log(
+                        f"   ⚠️ Contenu suspect ({taille} octets) — possible blocage ou redirection",
+                        "warning",
+                    )
+                if r.status_code == 403:
+                    _log("   ❌ Accès refusé (403) — site bloqué", "warning")
+                    return None
+                r.raise_for_status()
+                return r
+            except requests.exceptions.SSLError as exc:
+                _log(f"   🔒 Erreur SSL : {exc.__class__.__name__} — {str(exc)[:120]}", "warning")
+                return None
+            except requests.exceptions.Timeout:
+                _log(f"   ⏱️ Timeout ({self.timeout}s dépassé)", "warning")
+                return None
+            except requests.exceptions.ConnectionError as exc:
+                cause = str(exc)[:120]
+                if "refused" in cause.lower():
+                    _log(f"   🚫 Connexion refusée : {cause}", "warning")
+                else:
+                    _log(f"   🚫 Erreur de connexion : {cause}", "warning")
+                return None
+            except requests.exceptions.TooManyRedirects:
+                _log("   🔄 Trop de redirections", "warning")
+                return None
+            except requests.RequestException as exc:
+                _log(f"   ❓ Erreur inconnue : {exc.__class__.__name__} — {str(exc)[:120]}", "warning")
+                return None
+
+        time.sleep(random.uniform(self.delai * 0.5, self.delai * 1.5))
+        response = _connecter(url)
+
+        # Fallback HTTP si HTTPS a échoué
+        if response is None and url.startswith("https://"):
+            http_url = "http://" + url[len("https://"):]
+            _log(f"   ⚠️ HTTPS échoué → tentative HTTP sur {http_url}", "warning")
+            response = _connecter(http_url)
+            if response is not None:
+                url = http_url  # utiliser l'URL HTTP pour la suite
+                base_netloc = urlparse(url).netloc
+
+        if response is None:
+            _log(f"   ❌ Impossible de joindre {commune} — site ignoré", "warning")
             return []
 
         bilan["pages_visitees"] += 1
