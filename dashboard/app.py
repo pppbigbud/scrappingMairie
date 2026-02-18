@@ -2319,6 +2319,90 @@ def export_results():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/communes/departement')
+def get_communes_departement():
+    """Récupère les communes d'un département via geo.api.gouv.fr avec déduction d'URL mairie"""
+    code = request.args.get('code', '').strip().upper()
+    pop_min = request.args.get('pop_min', 0, type=int)
+    pop_max = request.args.get('pop_max', 9999999, type=int)
+    if not code:
+        return jsonify({'error': 'Paramètre code manquant'}), 400
+
+    try:
+        geo_url = f'https://geo.api.gouv.fr/communes?codeDepartement={code}&fields=nom,population,codesPostaux&format=json&geometry=none'
+        r = requests.get(geo_url, timeout=10)
+        r.raise_for_status()
+        communes_raw = r.json()
+    except Exception as e:
+        return jsonify({'error': f'Erreur API geo.gouv.fr : {e}'}), 502
+
+    def slugify(nom):
+        import unicodedata
+        s = unicodedata.normalize('NFD', nom.lower())
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        s = re.sub(r'[^a-z0-9]+', '-', s).strip('-')
+        return s
+
+    def guess_urls(nom):
+        slug = slugify(nom)
+        return [
+            f'https://www.mairie-{slug}.fr',
+            f'https://www.{slug}.fr',
+            f'https://www.ville-{slug}.fr',
+            f'https://www.commune-{slug}.fr',
+            f'https://mairie-{slug}.fr',
+        ]
+
+    result = []
+    for c in communes_raw:
+        pop = c.get('population') or 0
+        if pop < pop_min or pop > pop_max:
+            continue
+        nom = c.get('nom', '')
+        result.append({
+            'nom': nom,
+            'population': pop,
+            'code_postal': (c.get('codesPostaux') or [''])[0],
+            'urls_candidates': guess_urls(nom),
+            'url_retenue': guess_urls(nom)[0],
+            'url_status': 'unknown',
+        })
+
+    result.sort(key=lambda x: x['population'], reverse=True)
+    return jsonify({'communes': result, 'total': len(result), 'departement': code})
+
+
+@app.route('/api/urls/verify', methods=['POST'])
+def verify_urls():
+    """Vérifie la disponibilité d'une liste d'URLs via HEAD request (concurrent)"""
+    body = request.get_json() or {}
+    urls = body.get('urls', [])
+    timeout = body.get('timeout', 6)
+    if not urls:
+        return jsonify({'results': []})
+
+    import concurrent.futures
+
+    def check(url):
+        try:
+            hdrs = {'User-Agent': 'Mozilla/5.0 (compatible; HardScrapper/1.0)'}
+            resp = requests.head(url, timeout=timeout, allow_redirects=True, headers=hdrs)
+            return {'url': url, 'ok': resp.status_code < 400, 'status': resp.status_code, 'final_url': resp.url}
+        except requests.exceptions.SSLError:
+            try:
+                resp = requests.head(url, timeout=timeout, allow_redirects=True, verify=False, headers=hdrs)
+                return {'url': url, 'ok': resp.status_code < 400, 'status': resp.status_code, 'final_url': resp.url}
+            except Exception as e2:
+                return {'url': url, 'ok': False, 'status': 0, 'error': str(e2)}
+        except Exception as e:
+            return {'url': url, 'ok': False, 'status': 0, 'error': str(e)[:80]}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
+        results = list(ex.map(check, urls))
+
+    return jsonify({'results': results})
+
+
 @app.route('/api/communes/auvergne')
 def get_communes_auvergne():
     """Get list of Auvergne communes with population filter"""
