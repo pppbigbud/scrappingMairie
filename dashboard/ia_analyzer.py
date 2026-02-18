@@ -6,7 +6,7 @@ import requests
 import json
 import os
 
-def analyze_document_with_ollama(document_text: str, model: str = "mistral", prompt_file: str = None) -> dict:
+def analyze_document_with_ollama(document_text: str, model: str = "tinyllama", prompt_file: str = None) -> dict:
     """
     Analyze a document using Ollama local AI
     
@@ -38,13 +38,23 @@ Analyse le document et retourne un JSON avec:
 
 Recherche particulièrement: biomasse, chaufferies bois, réseaux de chaleur, solaire, PCAET, transition énergétique."""
     
-    # Truncate document if too long (keep first 4000 chars for context)
-    max_length = 4000
+    # TinyLlama a un contexte limité (~2048 tokens) — on tronque à 1500 chars
+    max_length = 1500 if 'tinyllama' in model.lower() else 4000
     if len(document_text) > max_length:
-        document_text = document_text[:max_length] + "\n\n[...document tronqué...]"
+        document_text = document_text[:max_length] + "\n[...tronqué...]"
     
-    # Build prompt - very strict for TinyLlama
-    full_prompt = f"""{system_prompt}
+    # Prompt ultra-compact pour TinyLlama (contexte limité)
+    if 'tinyllama' in model.lower():
+        full_prompt = f"""Analyse ce texte. Réponds UNIQUEMENT en JSON, sans aucun texte avant ou après.
+
+Texte: {document_text}
+
+JSON (ia_pertinent=true si le texte parle d'énergie renouvelable/solaire/biomasse/chaleur):
+{{"ia_pertinent": false, "ia_score": 0, "ia_resume": "court", "ia_justification": "raison"}}
+
+JSON:"""
+    else:
+        full_prompt = f"""{system_prompt}
 
 # Document à analyser
 
@@ -70,10 +80,11 @@ JSON:"""
                 'stream': False,
                 'options': {
                     'temperature': 0.1,
-                    'num_predict': 500
+                    'num_predict': 150 if 'tinyllama' in model.lower() else 500,
+                    'num_ctx': 2048 if 'tinyllama' in model.lower() else 4096,
                 }
             },
-            timeout=60
+            timeout=30 if 'tinyllama' in model.lower() else 60
         )
         
         if response.status_code == 200:

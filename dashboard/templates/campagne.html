@@ -628,7 +628,7 @@ const AIDE = {
                 <span class="text-xs">Appliqué pendant le scraping. Les pages avec un score inférieur sont ignorées immédiatement.</span>
             </div>
             <div class="p-2 bg-gray-800 rounded">
-                <strong class="text-red-400">Seuil IA</strong> — Filtre par analyse Mistral/Ollama<br>
+                <strong class="text-red-400">Seuil IA</strong> — Filtre par analyse TinyLlama/Ollama<br>
                 <span class="text-xs">Appliqué après l'analyse IA. Les documents avec un score IA inférieur sont exclus des résultats.</span>
             </div>
         </div>`
@@ -646,7 +646,7 @@ const AIDE = {
     },
     seuil_ia: {
         titre: '🤖 Seuil IA minimum (/10)',
-        contenu: `<p>Score minimum attribué par l'IA (Mistral/Ollama) pour qu'un document soit conservé dans les résultats.</p>
+        contenu: `<p>Score minimum attribué par l'IA (TinyLlama/Ollama) pour qu'un document soit conservé dans les résultats.</p>
         <div class="mt-2 space-y-1 text-xs">
             <div><span class="help-tag" style="background:#374151;color:#9ca3af">1-4</span> Pertinence faible — beaucoup de faux positifs</div>
             <div><span class="help-tag" style="background:#7f1d1d;color:#fca5a5">5-6</span> Pertinence moyenne</div>
@@ -1063,7 +1063,7 @@ async function lancerScraping() {
     }
     const payload = {
         crawling: crawlingConfig,
-        ai: { search_depth: cfg.parametres_scraping.profondeur, score_threshold: cfg.seuil_ia, api_provider:'ollama', model:'mistral' },
+        ai: { search_depth: cfg.parametres_scraping.profondeur, score_threshold: cfg.seuil_ia, api_provider:'ollama', model:'tinyllama' },
         filtering: { energy_keywords: [...cfg.mots_cles.prioritaires,...cfg.mots_cles.secondaires,...cfg.mots_cles.budget] }
     };
     setBtnState(true);

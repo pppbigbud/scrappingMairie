@@ -1040,7 +1040,7 @@ def run_analysis(config):
             # ── Analyse IA (Ollama) sur les docs pertinents ──────────────────
             pertinents_scraping = [d for d in all_results if d.get('pertinent')]
             seuil_ia = config.get('ai', {}).get('score_threshold', 7)
-            model_ia = config.get('ai', {}).get('model', 'mistral')
+            model_ia = config.get('ai', {}).get('model', 'tinyllama')
 
             if pertinents_scraping and check_ollama_available():
                 status_queue.put({'status': 'running', 'message': f'🤖 Analyse IA de {len(pertinents_scraping)} document(s) pertinent(s) avec {model_ia}...', 'timestamp': datetime.now().isoformat()})
