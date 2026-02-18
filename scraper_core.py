@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
+import hashlib
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -562,6 +563,7 @@ class ScraperCore:
         session = self._make_session()
         found: List[Dict] = []
         seen_urls: set = set()
+        seen_hashes: set = set()
         base_netloc = urlparse(url).netloc
 
         # ── Étape 0 : Connexion page d'accueil ────────────────────────────────
@@ -677,19 +679,28 @@ class ScraperCore:
         else:
             _log("   ℹ️ Aucune section prioritaire détectée (délibérations, actualités…)")
 
+        _TIMEOUT_MOTS = ["deliber", "conseil", "budget", "projet", "marche"]
         nb_sections = len(sources_prioritaires)
         for sec_idx, (section_url, section_type) in enumerate(sources_prioritaires, 1):
             if section_url in seen_urls:
                 continue
+            sec_timeout = (
+                self.timeout * 2
+                if any(m in section_url.lower() for m in _TIMEOUT_MOTS)
+                else self.timeout
+            )
             try:
                 time.sleep(random.uniform(0.5, 1.2))
-                r = session.get(section_url, timeout=self.timeout)
+                r = session.get(section_url, timeout=sec_timeout)
                 bilan["pages_visitees"] += 1
-
+                _log(
+                    f"   [{sec_idx}/{nb_sections}] HTTP {r.status_code}"
+                    f" | [{section_type}] {section_url}"
+                )
                 if r.status_code != 200:
                     _log(
-                        f"   [{sec_idx}/{nb_sections}] ⚠️ Section {section_type}"
-                        f" HTTP {r.status_code} → {section_url}",
+                        f"   [{sec_idx}/{nb_sections}] ⚠️ Ignorée (HTTP {r.status_code})"
+                        f" | {section_url}",
                         "warning",
                     )
                     continue
@@ -744,15 +755,20 @@ class ScraperCore:
                             score_composite=sc_sec,
                         )
                         doc_sec["document_type"] = "html"
-                        found.append(doc_sec)
-                        bilan["docs_avec_mots_cles"] += 1
-                        bilan["docs_retenus"] += 1
-                        bilan["score_max"] = max(bilan["score_max"], sc_sec["score_composite"])
-                        _log(
-                            f"      ✅ Doc retenu : {fname_sec}"
-                            f" | score={sc_sec['score_composite']}"
-                            f" | {sf_sec['maturite_emoji']} {sf_sec['maturite_label']}"
-                        )
+                        _hash = hashlib.md5(texte_section[:500].encode()).hexdigest()
+                        if _hash in seen_hashes:
+                            _log(f"      ⏭️ Contenu dupliqué ignoré : {fname_sec}")
+                        else:
+                            seen_hashes.add(_hash)
+                            found.append(doc_sec)
+                            bilan["docs_avec_mots_cles"] += 1
+                            bilan["docs_retenus"] += 1
+                            bilan["score_max"] = max(bilan["score_max"], sc_sec["score_composite"])
+                            _log(
+                                f"      ✅ Doc retenu : {fname_sec}"
+                                f" | score={sc_sec['score_composite']}"
+                                f" | {sf_sec['maturite_emoji']} {sf_sec['maturite_label']}"
+                            )
                     else:
                         _log("      ⏭️ Section hors fenêtre temporelle — ignorée")
 
@@ -838,6 +854,11 @@ class ScraperCore:
                         signaux_faibles=sf,
                         score_composite=sc,
                     )
+                    _hash = hashlib.md5(texte[:500].encode()).hexdigest()
+                    if _hash in seen_hashes:
+                        _log(f"         ⏭️ Contenu dupliqué ignoré : {fname}")
+                        continue
+                    seen_hashes.add(_hash)
                     found.append(doc)
                     bilan["docs_retenus"] += 1
                     bilan["score_max"] = max(bilan["score_max"], sc["score_composite"])
@@ -846,8 +867,17 @@ class ScraperCore:
                         f" | {sf['maturite_emoji']} {sf['maturite_label']}"
                     )
 
+            except requests.exceptions.Timeout:
+                _log(
+                    f"   [{sec_idx}/{nb_sections}] ⏱️ Timeout ({sec_timeout}s) | {section_url}",
+                    "warning",
+                )
             except requests.RequestException as exc:
-                _log(f"   ⚠️ Erreur section {section_url} : {exc}", "warning")
+                _log(
+                    f"   [{sec_idx}/{nb_sections}] ❌ Erreur : {exc.__class__.__name__} — {str(exc)[:80]}"
+                    f" | {section_url}",
+                    "warning",
+                )
 
         # ── Étape 3 : Toutes les pages HTML internes non encore visitées ─────
         html3_links = [
@@ -1030,11 +1060,20 @@ class ScraperCore:
             return len(_PRIORITE_MOTS)  # priorité basse
 
         for link in soup.find_all("a", href=True):
-            href = link.get("href", "")
+            href = link.get("href", "").strip()
+            # Filtrer ancres pures (#, #main, javascript:, mailto:)
+            if not href or href.startswith("#") or href.startswith("javascript:") or href.startswith("mailto:"):
+                continue
             full = urljoin(base_url, href)
             if urlparse(full).netloc != base_netloc:
                 continue
             if full in seen:
+                continue
+            # Filtrer ancres résolues et URL racine
+            parsed_full = urlparse(full)
+            if parsed_full.fragment:  # contient un # après résolution
+                continue
+            if full.rstrip('/') == base_url.rstrip('/'):
                 continue
             url_lower = full.lower()
             stype = "generique"
