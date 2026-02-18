@@ -107,6 +107,12 @@ SOURCE_PRIORITES = {
     "generique":    ("Page générique",  0),
 }
 
+# Mots-clés URL pour trier les sections par potentiel (priorité décroissante)
+_PRIORITE_MOTS: List[List[str]] = [
+    ["deliber", "conseil", "budget", "marche", "projet", "energie", "travaux", "document", "rapport"],
+    ["actu", "news", "article", "bulletin"],
+]
+
 # Patterns URL pour détecter les sections prioritaires
 _SECTION_PATTERNS = {
     "actualites":   re.compile(r'actual|news|agenda|evenement', re.I),
@@ -664,8 +670,9 @@ class ScraperCore:
         # ── Étape 2 : Sources prioritaires ────────────────────────────────────
         sources_prioritaires = self._get_sources_prioritaires(url, home_soup, base_netloc)
         if sources_prioritaires:
-            urls_sections = [u for u, _ in sources_prioritaires]
-            _log(f"📂 {len(sources_prioritaires)} section(s) à explorer : {urls_sections}")
+            _log(f"📂 {len(sources_prioritaires)} section(s) détectées")
+            _log(f"📋 Ordre de visite : {[u for u, _ in sources_prioritaires[:10]]}" +
+                 (f" … (+{len(sources_prioritaires)-10} autres)" if len(sources_prioritaires) > 10 else ""))
         else:
             _log("   ℹ️ Aucune section prioritaire détectée (délibérations, actualités…)")
 
@@ -948,15 +955,20 @@ class ScraperCore:
     def _get_sources_prioritaires(self, base_url: str, soup: BeautifulSoup,
                                    base_netloc: str) -> List[Tuple[str, str]]:
         """
-        Retourne les URLs des sections à explorer, avec leur type, dans l'ordre :
-        actualités > délibérations > bulletins > budget > générique.
+        Retourne TOUTES les URLs de sections détectées, triées par potentiel :
+        Priorité 1 : deliber, conseil, budget, marche, projet, energie, travaux, document, rapport
+        Priorité 2 : actu, news, article, bulletin
+        Priorité 3 : tout le reste
         """
-        results: List[Tuple[str, str]] = []
-        seen = set()
-        priority_order = ["actualites", "deliberation", "bulletin", "budget"]
+        seen: set = set()
+        # (url, stype, priorite)
+        candidates: List[Tuple[str, str, int]] = []
 
-        # Construire un dict type -> liste d'URLs
-        typed: Dict[str, List[str]] = {k: [] for k in priority_order}
+        def _priorite(url_lower: str) -> int:
+            for i, mots in enumerate(_PRIORITE_MOTS):
+                if any(m in url_lower for m in mots):
+                    return i  # 0 = plus haute priorité
+            return len(_PRIORITE_MOTS)  # priorité basse
 
         for link in soup.find_all("a", href=True):
             href = link.get("href", "")
@@ -965,18 +977,21 @@ class ScraperCore:
                 continue
             if full in seen:
                 continue
-            for stype, pat in _SECTION_PATTERNS.items():
+            url_lower = full.lower()
+            stype = "generique"
+            for st, pat in _SECTION_PATTERNS.items():
                 if pat.search(href) or pat.search(link.get_text()):
-                    if stype in typed:
-                        typed[stype].append(full)
-                        seen.add(full)
+                    stype = st
                     break
+            # N'inclure que les sections non-document
+            if self._is_document(full):
+                continue
+            seen.add(full)
+            candidates.append((full, stype, _priorite(url_lower)))
 
-        for stype in priority_order:
-            for u in list(dict.fromkeys(typed[stype]))[:5]:
-                results.append((u, stype))
-
-        return results
+        # Tri : priorité croissante (0 = premier), puis ordre d'apparition
+        candidates.sort(key=lambda x: x[2])
+        return [(u, st) for u, st, _ in candidates]
 
     def _is_document(self, url: str) -> bool:
         url_lower = url.lower()
