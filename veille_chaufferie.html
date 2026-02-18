@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veille Chaufferie Biomasse - Auvergne</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            padding: 20px;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px 30px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            min-width: 150px;
+        }
+        
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        
+        .alert-banner {
+            background: #f39c12;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 30px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .opportunities {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+        }
+        
+        .opportunity-card {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .opportunity-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: white;
+            padding: 20px;
+            position: relative;
+        }
+        
+        .card-header.moyenne {
+            background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+        }
+        
+        .card-header.faible {
+            background: linear-gradient(135deg, #27ae60 0%, #229954 100%);
+        }
+        
+        .confidence-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(255,255,255,0.2);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .commune-name {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .departement {
+            opacity: 0.9;
+            font-size: 0.95em;
+        }
+        
+        .card-body {
+            padding: 25px;
+        }
+        
+        .info-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .info-icon {
+            width: 40px;
+            height: 40px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 1.2em;
+        }
+        
+        .info-content {
+            flex: 1;
+        }
+        
+        .info-label {
+            font-size: 0.85em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 3px;
+        }
+        
+        .info-value {
+            font-size: 1.1em;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .montant {
+            color: #27ae60;
+            font-weight: bold;
+            font-size: 1.3em;
+        }
+        
+        .keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 5px;
+        }
+        
+        .keyword {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        
+        .description {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 0.95em;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 20px;
+            opacity: 0.8;
+        }
+        
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8em;
+            }
+            
+            .opportunities {
+                grid-template-columns: 1fr;
+            }
+            
+            .stat-card {
+                min-width: 120px;
+                padding: 15px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔥 Veille Chaufferie Biomasse</h1>
+            <p>Détection précoce des projets en Auvergne</p>
+        </header>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">4</div>
+                <div class="stat-label">Opportunités détectées</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">4</div>
+                <div class="stat-label">Forte confiance</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">430K€</div>
+                <div class="stat-label">Montant identifié</div>
+            </div>
+        </div>
+        
+        <div class="alert-banner">
+            ⚠️ DONNÉES DE DÉMONSTRATION - POC uniquement (données simulées)
+        </div>
+        
+        <div class="opportunities">
+            
+            <!-- Opportunité 1: Ambert -->
+            <div class="opportunity-card">
+                <div class="card-header">
+                    <span class="confidence-badge">🔴 Forte</span>
+                    <div class="commune-name">Ambert</div>
+                    <div class="departement">Puy-de-Dôme (63)</div>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="info-icon">📅</div>
+                        <div class="info-content">
+                            <div class="info-label">Date de délibération</div>
+                            <div class="info-value">15 novembre 2024</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">💰</div>
+                        <div class="info-content">
+                            <div class="info-label">Budget estimé</div>
+                            <div class="info-value montant">180 000 € HT</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🏫</div>
+                        <div class="info-content">
+                            <div class="info-label">Projet</div>
+                            <div class="info-value">École primaire Jean Moulin</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🔑</div>
+                        <div class="info-content">
+                            <div class="info-label">Mots-clés détectés</div>
+                            <div class="keywords">
+                                <span class="keyword">chaufferie</span>
+                                <span class="keyword">biomasse</span>
+                                <span class="keyword">bois énergie</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="description">
+                        <strong>Description :</strong> Attribution du marché de réhabilitation de la chaufferie bois de l'école Jean Moulin. Projet en phase de contractualisation - <strong>URGENCE MAXIMALE</strong> pour prise de contact avant signature.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Opportunité 2: Thiers -->
+            <div class="opportunity-card">
+                <div class="card-header">
+                    <span class="confidence-badge">🔴 Forte</span>
+                    <div class="commune-name">Thiers</div>
+                    <div class="departement">Puy-de-Dôme (63)</div>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="info-icon">📅</div>
+                        <div class="info-content">
+                            <div class="info-label">Date de délibération</div>
+                            <div class="info-value">20 octobre 2024</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">💰</div>
+                        <div class="info-content">
+                            <div class="info-label">Budget estimé</div>
+                            <div class="info-value montant">250 000 €</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🎯</div>
+                        <div class="info-content">
+                            <div class="info-label">Projet</div>
+                            <div class="info-value">Salle des fêtes - Études préalables</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🔑</div>
+                        <div class="info-content">
+                            <div class="info-label">Mots-clés détectés</div>
+                            <div class="keywords">
+                                <span class="keyword">chaufferie</span>
+                                <span class="keyword">biomasse</span>
+                                <span class="keyword">chaufferie collective</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="description">
+                        <strong>Description :</strong> Crédits ouverts pour études préalables chaufferie biomasse salle des fêtes. Projet en phase budgétaire 2025 - <strong>fenêtre idéale</strong> pour présentation en amont du marché.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Opportunité 3: Riom -->
+            <div class="opportunity-card">
+                <div class="card-header">
+                    <span class="confidence-badge">🔴 Forte</span>
+                    <div class="commune-name">Riom</div>
+                    <div class="departement">Puy-de-Dôme (63)</div>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="info-icon">📅</div>
+                        <div class="info-content">
+                            <div class="info-label">Date de délibération</div>
+                            <div class="info-value">5 août 2024</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">💰</div>
+                        <div class="info-content">
+                            <div class="info-label">Budget estimé</div>
+                            <div class="info-value">Non précisé (étude de faisabilité)</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🏘️</div>
+                        <div class="info-content">
+                            <div class="info-label">Projet</div>
+                            <div class="info-value">Réseau de chaleur - Quartier St Amable</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🔑</div>
+                        <div class="info-content">
+                            <div class="info-label">Mots-clés détectés</div>
+                            <div class="keywords">
+                                <span class="keyword">biomasse</span>
+                                <span class="keyword">réseau chaleur</span>
+                                <span class="keyword">étude faisabilité</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="description">
+                        <strong>Description :</strong> Engagement de dépense pour étude préalable réseau chaleur quartier St Amable. Objectif : valoriser biomasse locale. Projet structurant pour la commune.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Opportunité 4: Yzeure -->
+            <div class="opportunity-card">
+                <div class="card-header">
+                    <span class="confidence-badge">🔴 Forte</span>
+                    <div class="commune-name">Yzeure</div>
+                    <div class="departement">Allier (03)</div>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <div class="info-icon">📅</div>
+                        <div class="info-content">
+                            <div class="info-label">Date de délibération</div>
+                            <div class="info-value">10 septembre 2024</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">💰</div>
+                        <div class="info-content">
+                            <div class="info-label">Budget estimé</div>
+                            <div class="info-value">Non précisé (demande de subvention)</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🏠</div>
+                        <div class="info-content">
+                            <div class="info-label">Projet</div>
+                            <div class="info-value">Immeuble seniors - Chauffage collectif</div>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">🔑</div>
+                        <div class="info-content">
+                            <div class="info-label">Mots-clés détectés</div>
+                            <div class="keywords">
+                                <span class="keyword">biomasse</span>
+                                <span class="keyword">chaudière bois</span>
+                                <span class="keyword">plaquettes</span>
+                                <span class="keyword">Fonds Chaleur</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="description">
+                        <strong>Description :</strong> Demande de subvention Fonds Chaleur pour installation chaudière bois plaquettes en chauffage collectif dans un immeuble seniors. Projet en phase de montage financier.
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        <div class="footer">
+            <p>🤖 Généré par OpenClaw - POC Veille Chaufferie Biomasse</p>
+            <p style="font-size: 0.9em; margin-top: 10px;">Données simulées à des fins de démonstration uniquement</p>
+        </div>
+    </div>
+</body>
+</html>

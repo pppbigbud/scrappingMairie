@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hardscrapper Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#dc2626',
+                        secondary: '#1f2937',
+                        accent: '#ef4444'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+    <!-- Sidebar -->
+    <aside class="fixed inset-y-0 left-0 z-50 w-64 bg-gray-800 border-r border-gray-700">
+        <div class="flex flex-col h-full">
+            <!-- Logo -->
+            <div class="flex items-center justify-center h-16 px-4 border-b border-gray-700">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                        <i data-lucide="hammer" class="w-5 h-5 text-white"></i>
+                    </div>
+                    <h1 class="text-xl font-bold text-white">Hardscrapper</h1>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-6 space-y-2">
+                <button class="nav-btn active" data-section="crawl">
+                    <i data-lucide="globe" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Crawling</span>
+                </button>
+                <button class="nav-btn" data-section="filter">
+                    <i data-lucide="filter" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Filtrage</span>
+                </button>
+                <button class="nav-btn" data-section="ai">
+                    <i data-lucide="brain" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">IA</span>
+                </button>
+                <button class="nav-btn" data-section="batch">
+                    <i data-lucide="layers" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Performance</span>
+                </button>
+                <button class="nav-btn" data-section="results">
+                    <i data-lucide="bar-chart-2" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Résultats</span>
+                </button>
+                <button class="nav-btn" data-section="documents">
+                    <i data-lucide="file-text" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Documents</span>
+                </button>
+                <button class="nav-btn" data-section="config">
+                    <i data-lucide="settings" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Config IA</span>
+                </button>
+            </nav>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-700">
+                <div class="text-xs text-gray-400">
+                    <p>Version 1.0.0</p>
+                    <p>© 2026 Hardscrapper</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="pl-64 min-h-screen">
+        <!-- Header -->
+        <header class="sticky top-0 z-40 bg-gray-800 border-b border-gray-700">
+            <div class="flex items-center justify-between h-16 px-6">
+                <div class="flex items-center space-x-4">
+                    <h2 id="section-title" class="text-lg font-semibold text-white">Configuration du Crawling</h2>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button id="start-analysis" class="bg-primary hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                        <i data-lucide="play" class="w-4 h-4 mr-2"></i>
+                        Lancer l'analyse
+                    </button>
+                    <button id="export-results" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <main class="p-6 w-full">
+            <!-- Crawling Section -->
+            <div id="crawl-section" class="content-section active">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-xl font-semibold mb-6 text-white">Paramètres de Crawling</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- User Agent -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">User-Agent</label>
+                            <input type="text" name="user_agent" value="Hardscrapper/1.0" 
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Max Depth -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Profondeur maximale</label>
+                            <input type="number" name="max_depth" value="3" min="1" max="10"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Max Pages -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Pages maximum</label>
+                            <input type="number" name="max_pages" value="30" min="1" max="1000"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Rate Limit -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Délai entre requêtes (s)</label>
+                            <input type="number" name="rate_limit" value="0.5" min="0.1" max="10" step="0.1"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- HTTP Timeout -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Timeout HTTP (s)</label>
+                            <input type="number" name="http_timeout" value="10" min="1" max="60"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Deep Crawling -->
+                        <div class="flex items-center space-x-3">
+                            <input type="checkbox" name="deep_crawling" id="deep_crawling" checked
+                                   class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                            <label for="deep_crawling" class="text-sm font-medium text-gray-300">Scraping profond</label>
+                        </div>
+                    </div>
+
+                    <!-- Search Depth -->
+                    <div class="mt-6">
+                        <h4 class="text-lg font-medium mb-3 text-white">Niveau de recherche</h4>
+                        <div class="grid grid-cols-3 gap-3">
+                            <label class="relative flex flex-col items-center p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-primary transition-colors">
+                                <input type="radio" name="search_depth" value="surface" class="sr-only peer">
+                                <div class="peer-checked:border-primary peer-checked:bg-gray-600 w-full h-full absolute inset-0 rounded-lg border-2 border-transparent"></div>
+                                <span class="text-2xl mb-2">🏃</span>
+                                <span class="font-semibold text-white mb-1">Surface</span>
+                                <span class="text-xs text-gray-400 text-center">Mots-clés uniquement<br>Pas d'IA • Rapide • Gratuit</span>
+                            </label>
+                            <label class="relative flex flex-col items-center p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-primary transition-colors">
+                                <input type="radio" name="search_depth" value="moyen" class="sr-only peer" checked>
+                                <div class="peer-checked:border-primary peer-checked:bg-gray-600 w-full h-full absolute inset-0 rounded-lg border-2 border-transparent"></div>
+                                <span class="text-2xl mb-2">🚶</span>
+                                <span class="font-semibold text-white mb-1">Moyen</span>
+                                <span class="text-xs text-gray-400 text-center">IA sur PDFs uniquement<br>Équilibré • Recommandé</span>
+                            </label>
+                            <label class="relative flex flex-col items-center p-4 bg-gray-700 border-2 border-gray-600 rounded-lg cursor-pointer hover:border-primary transition-colors">
+                                <input type="radio" name="search_depth" value="profond" class="sr-only peer">
+                                <div class="peer-checked:border-primary peer-checked:bg-gray-600 w-full h-full absolute inset-0 rounded-lg border-2 border-transparent"></div>
+                                <span class="text-2xl mb-2">🔬</span>
+                                <span class="font-semibold text-white mb-1">Profond</span>
+                                <span class="text-xs text-gray-400 text-center">IA sur tout (PDF + HTML)<br>Précis • Lent • Coûteux</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Crawling Mode -->
+                    <div class="mt-6">
+                        <h4 class="text-lg font-medium mb-4 text-white">Mode de Crawling</h4>
+                        <div class="flex space-x-6 mb-4">
+                            <label class="flex items-center">
+                                <input type="radio" name="crawling_mode" value="single" checked
+                                       class="w-4 h-4 text-primary bg-gray-700 border-gray-600 focus:ring-primary">
+                                <span class="ml-2 text-sm text-gray-300">URL unique</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="crawling_mode" value="department"
+                                       class="w-4 h-4 text-primary bg-gray-700 border-gray-600 focus:ring-primary">
+                                <span class="ml-2 text-sm text-gray-300">Par département</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Single URL Mode -->
+                    <div id="single-url-mode" class="mt-6">
+                        <h4 class="text-lg font-medium mb-4 text-white">URLs prédéfinies</h4>
+                        
+                        <!-- Quick Load Buttons -->
+                        <div class="mb-4 flex gap-3">
+                            <button type="button" onclick="loadAuvergneCommunes()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2">
+                                <span>🏔️</span>
+                                <span>Charger Auvergne</span>
+                            </button>
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-gray-300">Pop. min:</label>
+                                <input type="number" id="auvergne-min-pop" value="5000" min="0" max="50000" step="1000"
+                                       class="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm">
+                            </div>
+                        </div>
+                        
+                        <label class="block text-sm font-medium text-gray-300 mb-2">URLs à analyser</label>
+                        <textarea name="urls" rows="4"
+                                  class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent"
+                                  placeholder="https://www.nivigne-et-suran.fr/">https://www.nivigne-et-suran.fr/</textarea>
+                        <p class="text-xs text-gray-400 mt-2">
+                            <i data-lucide="info" class="w-3 h-3 inline"></i>
+                            Une URL par ligne. Utilisez le bouton "Charger Auvergne" pour tester le mode Surface sur toutes les communes.
+                        </p>
+                    </div>
+
+                    <!-- Department Mode -->
+                    <div id="department-mode" class="mt-6 hidden">
+                        <h4 class="text-lg font-medium mb-4 text-white">Configuration par Département</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Department Code -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">Département</label>
+                                <select name="department_code" id="department_code"
+                                        class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                    <option value="63">63 - Puy-de-Dôme</option>
+                                    <option value="69">69 - Rhône</option>
+                                    <option value="01">01 - Ain</option>
+                                </select>
+                            </div>
+
+                            <!-- Min Population -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2">Population minimale</label>
+                                <input type="number" name="min_population" value="5000" min="1000" max="100000" step="1000"
+                                       class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                        </div>
+
+                        <!-- Department Info -->
+                        <div class="mt-4 p-4 bg-gray-700 rounded-lg">
+                            <p class="text-sm text-gray-300">
+                                <i data-lucide="info" class="w-4 h-4 inline mr-2"></i>
+                                Le système analysera automatiquement toutes les mairies du département avec une population supérieure ou égale au seuil défini.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- CSS Selectors -->
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Sélecteurs CSS (optionnel)</label>
+                        <input type="text" name="css_selectors" placeholder="Ex: .content, .main, article"
+                               class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filter Section -->
+            <div id="filter-section" class="content-section hidden">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-xl font-semibold mb-6 text-white">Paramètres de Filtrage</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Min Score -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Score minimum (0-100)</label>
+                            <input type="number" name="min_score" value="50" min="0" max="100"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Document Types -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Types de documents</label>
+                            <div class="space-y-2">
+                                <label class="flex items-center">
+                                    <input type="checkbox" name="doc_types" value="pdf" checked
+                                           class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                    <span class="ml-2 text-gray-300">PDF</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" name="doc_types" value="docx" checked
+                                           class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                    <span class="ml-2 text-gray-300">DOCX</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" name="doc_types" value="odt" checked
+                                           class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                    <span class="ml-2 text-gray-300">ODT</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" name="doc_types" value="html" checked
+                                           class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                    <span class="ml-2 text-gray-300">HTML (pages web)</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Date Range -->
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-300 mb-4">Filtrage par date (signaux faibles)</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-2">Date de début</label>
+                                <input type="date" name="date_start" id="date-start"
+                                       class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-2">Date de fin</label>
+                                <input type="date" name="date_end" id="date-end"
+                                       class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">💡 Conseil : Pour détecter les signaux faibles avant les appels d'offres, limitez aux 6-12 derniers mois</p>
+                        <div class="flex gap-2 mt-3">
+                            <button type="button" id="set-last-6months" class="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">6 derniers mois</button>
+                            <button type="button" id="set-last-12months" class="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">12 derniers mois</button>
+                            <button type="button" id="set-current-year" class="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">Année en cours</button>
+                            <button type="button" id="clear-dates" class="text-xs px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded">Tout</button>
+                        </div>
+                    </div>
+
+                    <!-- Energy Keywords -->
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Mots-clés énergétiques</label>
+                        <textarea name="energy_keywords" rows="4"
+                                  class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">chaufferie biomasse
+réseau de chaleur
+bois énergie
+projet énergétique collectif
+chaudière bois
+chauffage collectif
+granulés
+plaquettes
+pellets
+énergie renouvelable</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Section -->
+            <div id="ai-section" class="content-section hidden">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-xl font-semibold mb-6 text-white">Configuration de l'IA</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- API Provider -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Provider IA</label>
+                            <select name="api_provider" id="api_provider" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent" onchange="toggleApiConfig()">
+                                <option value="groq" selected>Groq (rapide + gratuit) 🏆</option>
+                                <option value="openrouter">OpenRouter (multi-modèles)</option>
+                                <option value="together">Together.ai (crédit $25)</option>
+                                <option value="openai">OpenAI (fiable)</option>
+                                <option value="ollama">Ollama Local (gratuit, lent)</option>
+                            </select>
+                        </div>
+
+                        <!-- API Key -->
+                        <div id="api_key_field">
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Clé API</label>
+                            <input type="password" name="api_key" id="api_key" placeholder="Clé chargée depuis .env"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                            <p class="text-xs text-gray-400 mt-1">✅ Clé sauvegardée dans .env | Groq: <a href="https://console.groq.com/keys" target="_blank" class="text-blue-400 hover:underline">console.groq.com/keys</a></p>
+                        </div>
+
+                        <!-- Model (for Ollama only) -->
+                        <div id="ollama_model_field" style="display: none;">
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Modèle Ollama</label>
+                            <select name="model" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                <option value="mistral">Mistral-7B (qualité)</option>
+                                <option value="tinyllama">TinyLlama (rapidité)</option>
+                            </select>
+                        </div>
+
+                        <!-- Temperature -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Température (0.1-1.0)</label>
+                            <input type="number" name="temperature" value="0.1" min="0.1" max="1.0" step="0.1"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Context Size -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Taille du contexte</label>
+                            <select name="context_size" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                <option value="1000">1000 caractères (rapide)</option>
+                                <option value="2000">2000 caractères (précis)</option>
+                            </select>
+                        </div>
+
+                        <!-- Batch Size -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Taille des lots</label>
+                            <input type="number" name="batch_size" value="2" min="1" max="10"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Pause -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Pause entre lots (s)</label>
+                            <input type="number" name="pause_seconds" value="2" min="0" max="60"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <!-- Timeout -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Timeout par analyse (s)</label>
+                            <input type="number" name="timeout_seconds" value="60" min="10" max="300"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Section -->
+            <div id="batch-section" class="content-section hidden">
+                <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                    <h3 class="text-xl font-semibold mb-6 text-white">Optimisation des performances</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Threads CPU</label>
+                            <input type="number" name="cpu_threads" value="4" min="1" max="8"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Mémoire max (Go)</label>
+                            <input type="number" name="max_memory" value="4" min="1" max="16"
+                                   class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Cache activé</label>
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" name="cache_enabled" id="cache_enabled" checked
+                                       class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                <label for="cache_enabled" class="text-sm text-gray-300">Activer le cache</label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Mode debug</label>
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" name="debug_mode" id="debug_mode"
+                                       class="w-4 h-4 text-primary bg-gray-700 border-gray-600 rounded focus:ring-primary">
+                                <label for="debug_mode" class="text-sm text-gray-300">Activer les logs détaillés</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="content-section hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Current Analysis -->
+                    <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                        <h3 class="text-xl font-semibold mb-6 text-white">Analyse en cours</h3>
+                        <div id="current-status" class="mb-4">
+                            <div class="flex items-center">
+                                <div class="w-3 h-3 bg-gray-500 rounded-full mr-3"></div>
+                                <span class="text-gray-300">En attente...</span>
+                            </div>
+                        </div>
+                        <div class="relative pt-1">
+                            <div class="overflow-hidden h-3 mb-4 text-xs flex rounded bg-gray-700">
+                                <div id="progress-bar" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-primary transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Logs Section -->
+                        <div class="mt-6">
+                            <h4 class="text-lg font-medium mb-3 text-gray-300">Logs d'analyse</h4>
+                            <div id="logs-container" class="bg-gray-900 rounded-lg border border-gray-700 p-4 h-64 overflow-y-auto">
+                                <div id="logs-content" class="font-mono text-sm space-y-1">
+                                    <div class="text-gray-500">[INFO] En attente de démarrage de l'analyse...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Statistics -->
+                    <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                        <h3 class="text-xl font-semibold mb-6 text-white">Statistiques</h3>
+                        <canvas id="statsChart"></canvas>
+                    </div>
+
+                    <!-- History -->
+                    <div class="lg:col-span-2">
+                        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                            <h3 class="text-xl font-semibold mb-6 text-white">Historique des analyses</h3>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-700">
+                                    <thead class="bg-gray-700">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                                Date
+                                            </th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                                Documents
+                                            </th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                                Pertinents
+                                            </th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                                Score moyen
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-gray-800 divide-y divide-gray-700" id="history-table">
+                                        <!-- History rows will be inserted here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Documents Section -->
+            <div id="documents-section" class="content-section hidden">
+                <div class="space-y-6">
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                            <div class="flex items-center">
+                                <div class="w-12 h-12 bg-blue-900 rounded-full flex items-center justify-center mr-3">
+                                    <i data-lucide="file-text" class="w-6 h-6 text-blue-400"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-400">Total documents</p>
+                                    <p class="text-xl font-bold text-white" id="total-docs">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                            <div class="flex items-center">
+                                <div class="w-12 h-12 bg-green-900 rounded-full flex items-center justify-center mr-3">
+                                    <i data-lucide="check-circle" class="w-6 h-6 text-green-400"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-400">Pertinents</p>
+                                    <p class="text-xl font-bold text-green-400" id="pertinent-docs">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                            <div class="flex items-center">
+                                <div class="w-12 h-12 bg-yellow-900 rounded-full flex items-center justify-center mr-3">
+                                    <i data-lucide="alert-circle" class="w-6 h-6 text-yellow-400"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-400">Score moyen</p>
+                                    <p class="text-xl font-bold text-yellow-400" id="avg-score">0.0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                            <div class="flex items-center">
+                                <div class="w-12 h-12 bg-purple-900 rounded-full flex items-center justify-center mr-3">
+                                    <i data-lucide="trending-up" class="w-6 h-6 text-purple-400"></i>
+                                </div>
+                                <div>
+                                    <p class="text-sm text-gray-400">Taux pertinence</p>
+                                    <p class="text-xl font-bold text-purple-400" id="pertinence-rate">0%</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                        <div class="flex flex-wrap gap-4 items-center justify-between">
+                            <div class="flex flex-wrap gap-4 items-center flex-1">
+                                <div class="flex-1 min-w-64">
+                                    <input type="text" id="search-input" placeholder="Rechercher dans les documents..." 
+                                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                </div>
+                                <select id="score-filter" class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                    <option value="">Tous les scores</option>
+                                    <option value="high">Score élevé (7-10)</option>
+                                    <option value="medium">Score moyen (4-6)</option>
+                                    <option value="low">Score faible (0-3)</option>
+                                </select>
+                                <select id="pertinence-filter" class="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                    <option value="">Tous les documents</option>
+                                    <option value="true">Pertinents uniquement</option>
+                                    <option value="false">Non pertinents uniquement</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="refresh-documents" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                    <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                                    Actualiser
+                                </button>
+                                <button id="purge-documents" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                                    <i data-lucide="trash-2" class="w-4 h-4 mr-2"></i>
+                                    Purger tout
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Documents Grid -->
+                    <div id="documents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- Documents will be loaded here -->
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="loading" class="text-center py-12">
+                        <i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin text-gray-400"></i>
+                        <p class="mt-2 text-gray-400">Chargement des documents...</p>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="empty-state" class="text-center py-12 hidden">
+                        <i data-lucide="file-x" class="w-16 h-16 mx-auto text-gray-400 mb-4"></i>
+                        <h3 class="text-lg font-semibold text-white mb-2">Aucun document trouvé</h3>
+                        <p class="text-gray-400">Aucun document ne correspond à vos critères de filtrage.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Config Section -->
+            <div id="config-section" class="content-section hidden">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <!-- System Prompt -->
+                    <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-xl font-semibold text-white">Prompt Système</h3>
+                            <span class="text-sm text-gray-400">
+                                <span id="prompt-chars">0</span> caractères
+                            </span>
+                        </div>
+                        <textarea id="system-prompt" rows="20" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white font-mono text-sm focus:ring-2 focus:ring-primary focus:border-transparent resize-none"></textarea>
+                    </div>
+
+                    <!-- Settings Panel -->
+                    <div class="space-y-6">
+                        <!-- Model Settings -->
+                        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                            <h3 class="text-xl font-semibold text-white mb-4">Paramètres du Modèle</h3>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-300 mb-2">Modèle IA</label>
+                                    <select id="model-name" class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                        <option value="mistral">Mistral</option>
+                                        <option value="llama2">Llama 2</option>
+                                        <option value="codellama">Code Llama</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-300 mb-2">Contexte max (caractères)</label>
+                                    <input type="number" id="max-context" value="1000" min="100" max="8000" 
+                                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-300 mb-2">Seuil de pertinence</label>
+                                    <input type="number" id="score-threshold" value="7" min="1" max="10" 
+                                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Save Button -->
+                        <button id="save-config" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors w-full">
+                            <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+                            Sauvegarder la configuration
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Crawling mode toggle
+        document.querySelectorAll('input[name="crawling_mode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const singleMode = document.getElementById('single-url-mode');
+                const departmentMode = document.getElementById('department-mode');
+                
+                if (radio.value === 'single') {
+                    singleMode.classList.remove('hidden');
+                    departmentMode.classList.add('hidden');
+                } else {
+                    singleMode.classList.add('hidden');
+                    departmentMode.classList.remove('hidden');
+                }
+            });
+        });
+
+        // Navigation
+        const sections = {
+            crawl: { title: 'Configuration du Crawling', element: document.getElementById('crawl-section') },
+            filter: { title: 'Configuration du Filtrage', element: document.getElementById('filter-section') },
+            ai: { title: 'Configuration de l\'IA', element: document.getElementById('ai-section') },
+            batch: { title: 'Optimisation des performances', element: document.getElementById('batch-section') },
+            results: { title: 'Résultats et statistiques', element: document.getElementById('results-section') },
+            documents: { title: 'Documents analysés', element: document.getElementById('documents-section') },
+            config: { title: 'Configuration IA', element: document.getElementById('config-section') }
+        };
+
+        document.querySelectorAll('.nav-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sectionName = btn.dataset.section;
+                
+                // Update active states
+                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update sections
+                Object.values(sections).forEach(section => section.element.classList.add('hidden'));
+                sections[sectionName].element.classList.remove('hidden');
+                
+                // Update title
+                document.getElementById('section-title').textContent = sections[sectionName].title;
+                
+                // Load section-specific data
+                if (sectionName === 'documents') {
+                    loadDocuments();
+                } else if (sectionName === 'config') {
+                    loadConfig();
+                }
+            });
+        });
+
+        // Start analysis
+        document.getElementById('start-analysis').addEventListener('click', async () => {
+            try {
+                console.log('Starting analysis...');
+                const config = collectConfig();
+                console.log('Config collected:', config);
+                
+                const response = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (response.ok) {
+                    // Switch to results tab
+                    document.querySelector('[data-section="results"]').click();
+                    startStatusPolling();
+                } else {
+                    console.error('Server error:', response.status);
+                    alert('Erreur lors du démarrage de l\'analyse');
+                }
+            } catch (error) {
+                console.error('Error starting analysis:', error);
+                alert('Erreur: ' + error.message);
+            }
+        });
+
+        // Export results
+        document.getElementById('export-results').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/export');
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `hardscrapper_results_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }
+            } catch (error) {
+                console.error('Error exporting results:', error);
+            }
+        });
+
+        // Collect configuration
+        function collectConfig() {
+            console.log('Collecting configuration...');
+            
+            const crawlingMode = document.querySelector('input[name="crawling_mode"]:checked')?.value;
+            console.log('Crawling mode:', crawlingMode);
+            
+            if (!crawlingMode) {
+                console.error('Crawling mode not found!');
+                throw new Error('Mode de crawling non sélectionné');
+            }
+            
+            const config = {
+                crawling: {
+                    mode: crawlingMode,
+                    user_agent: document.querySelector('[name="user_agent"]')?.value || '',
+                    max_depth: parseInt(document.querySelector('[name="max_depth"]')?.value || 3),
+                    max_pages: parseInt(document.querySelector('[name="max_pages"]')?.value || 30),
+                    rate_limit: parseFloat(document.querySelector('[name="rate_limit"]')?.value || 0.5),
+                    http_timeout: parseInt(document.querySelector('[name="http_timeout"]')?.value || 10),
+                    deep_crawling: document.querySelector('[name="deep_crawling"]')?.checked || false,
+                    css_selectors: document.querySelector('[name="css_selectors"]')?.value || ''
+                },
+                filtering: {
+                    min_score: parseInt(document.querySelector('[name="min_score"]')?.value || 50),
+                    document_types: Array.from(document.querySelectorAll('[name="doc_types"]:checked')).map(cb => cb.value),
+                    energy_keywords: document.querySelector('[name="energy_keywords"]')?.value?.split('\n').filter(kw => kw.trim()) || [],
+                    date_start: document.querySelector('[name="date_start"]')?.value || null,
+                    date_end: document.querySelector('[name="date_end"]')?.value || null
+                },
+                ai: {
+                    api_provider: document.querySelector('[name="api_provider"]')?.value || 'groq',
+                    api_key: document.querySelector('[name="api_key"]')?.value || '',
+                    model: document.querySelector('[name="model"]')?.value || 'mistral',
+                    temperature: parseFloat(document.querySelector('[name="temperature"]')?.value || 0.1),
+                    context_size: parseInt(document.querySelector('[name="context_size"]')?.value || 1000),
+                    batch_size: parseInt(document.querySelector('[name="batch_size"]')?.value || 2),
+                    pause_seconds: parseInt(document.querySelector('[name="pause_seconds"]')?.value || 2),
+                    timeout_seconds: parseInt(document.querySelector('[name="timeout_seconds"]')?.value || 60),
+                    score_threshold: parseInt(document.querySelector('[name="score_threshold"]')?.value || 7),
+                    search_depth: document.querySelector('[name="search_depth"]:checked')?.value || 'moyen'
+                },
+                batch: {
+                    cpu_threads: parseInt(document.querySelector('[name="cpu_threads"]')?.value || 4),
+                    max_memory: parseInt(document.querySelector('[name="max_memory"]')?.value || 8192),
+                    cache_enabled: document.querySelector('[name="cache_enabled"]')?.checked || false,
+                    debug_mode: document.querySelector('[name="debug_mode"]')?.checked || false
+                }
+            };
+            
+            // Add mode-specific configuration
+            if (crawlingMode === 'single') {
+                const urlsElement = document.querySelector('[name="urls"]');
+                if (!urlsElement) {
+                    console.error('URLs textarea not found!');
+                    throw new Error('Champ URLs non trouvé');
+                }
+                config.crawling.predefined_urls = urlsElement.value.split('\n').filter(url => url.trim());
+            } else {
+                const deptCodeElement = document.querySelector('[name="department_code"]');
+                const minPopElement = document.querySelector('[name="min_population"]');
+                
+                if (!deptCodeElement) {
+                    console.error('Department code element not found!');
+                    throw new Error('Champ département non trouvé');
+                }
+                if (!minPopElement) {
+                    console.error('Min population element not found!');
+                    throw new Error('Champ population minimale non trouvé');
+                }
+                
+                config.crawling.department = {
+                    code: deptCodeElement.value,
+                    min_population: parseInt(minPopElement.value),
+                    target_cities: []
+                };
+            }
+            
+            console.log('Final config:', config);
+            return config;
+        }
+
+        // Status polling
+        let steps = 0;
+        let statsChart;
+
+        // Log management
+        function addLog(message, type = 'info') {
+            const logsContent = document.getElementById('logs-content');
+            const timestamp = new Date().toLocaleTimeString('fr-FR');
+            
+            const colorClass = {
+                'info': 'text-blue-400',
+                'success': 'text-green-400',
+                'warning': 'text-yellow-400',
+                'error': 'text-red-400',
+                'debug': 'text-gray-400'
+            }[type] || 'text-gray-300';
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = colorClass;
+            logEntry.innerHTML = `[${timestamp}] [${type.toUpperCase()}] ${message}`;
+            
+            logsContent.appendChild(logEntry);
+            
+            // Auto-scroll to bottom
+            const logsContainer = document.getElementById('logs-container');
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // Limit logs to last 100 entries
+            while (logsContent.children.length > 100) {
+                logsContent.removeChild(logsContent.firstChild);
+            }
+        }
+
+        function clearLogs() {
+            const logsContent = document.getElementById('logs-content');
+            logsContent.innerHTML = '<div class="text-gray-500">[INFO] Logs effacés...</div>';
+        }
+
+        function startStatusPolling() {
+            const statusDiv = document.getElementById('current-status');
+            const progressBar = document.getElementById('progress-bar');
+            
+            // Clear and initialize logs
+            clearLogs();
+            addLog('Démarrage de l\'analyse...', 'info');
+            
+            const poll = async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const data = await response.json();
+                    
+                    if (data.status === 'no_update') return;
+                    
+                    // Update status display
+                    statusDiv.innerHTML = `
+                        <div class="flex items-center">
+                            <div class="w-3 h-3 bg-primary rounded-full mr-3 animate-pulse"></div>
+                            <span class="text-gray-300">${data.message}</span>
+                        </div>
+                    `;
+                    
+                    // Add log entry
+                    addLog(data.message, data.status === 'error' ? 'error' : 'info');
+                    
+                    // Update progress
+                    steps++;
+                    progressBar.style.width = `${(steps / 6) * 100}%`;
+                    
+                    // Handle completion
+                    if (data.status === 'completed') {
+                        addLog('Analyse terminée avec succès!', 'success');
+                        updateHistory();
+                        return;
+                    } else if (data.status === 'error') {
+                        addLog('Erreur lors de l\'analyse!', 'error');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Error polling status:', error);
+                    addLog(`Erreur de communication: ${error.message}`, 'error');
+                }
+            };
+            
+            const interval = setInterval(poll, 1000);
+            setTimeout(() => {
+                clearInterval(interval);
+                addLog('Arrêt du polling après timeout (10 min). L\'analyse continue en arrière-plan, rechargez la page pour voir les résultats.', 'warning');
+            }, 600000); // 10 minutes pour gérer les retries API
+        }
+
+        // Update history
+        async function updateHistory() {
+            try {
+                const response = await fetch('/api/history');
+                const history = await response.json();
+                const tbody = document.getElementById('history-table');
+                
+                tbody.innerHTML = history.map(entry => `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                            ${new Date(entry.timestamp).toLocaleString()}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                            ${entry.results.documents_processed}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                            ${entry.results.relevant_found}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                            ${entry.results.average_score.toFixed(1)}
+                        </td>
+                    </tr>
+                `).join('');
+                
+                updateChart(history);
+            } catch (error) {
+                console.error('Error updating history:', error);
+            }
+        }
+
+        // Update chart
+        function updateChart(history) {
+            const ctx = document.getElementById('statsChart').getContext('2d');
+            
+            if (statsChart) {
+                statsChart.destroy();
+            }
+            
+            statsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(entry => new Date(entry.timestamp).toLocaleTimeString()),
+                    datasets: [{
+                        label: 'Score moyen',
+                        data: history.map(entry => entry.results.average_score),
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#e5e7eb' }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        },
+                        x: {
+                            ticks: { color: '#9ca3af' },
+                            grid: { color: '#374151' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load initial history
+        updateHistory();
+
+        // Documents functionality
+        let documents = [];
+        let filteredDocuments = [];
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                documents = await response.json();
+                filteredDocuments = [...documents];
+                
+                updateDocumentsStats();
+                renderDocuments();
+                
+                document.getElementById('loading').classList.add('hidden');
+                
+                if (filteredDocuments.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                document.getElementById('loading').innerHTML = '<p class="text-red-600">Erreur de chargement</p>';
+            }
+        }
+
+        function updateDocumentsStats() {
+            const total = filteredDocuments.length;
+            const pertinent = filteredDocuments.filter(d => d.ia_pertinent).length;
+            const avgScore = total > 0 ? 
+                (filteredDocuments.reduce((sum, d) => sum + (d.ia_score || 0), 0) / total).toFixed(1) : 0;
+            const pertinenceRate = total > 0 ? Math.round((pertinent / total) * 100) : 0;
+
+            document.getElementById('total-docs').textContent = total;
+            document.getElementById('pertinent-docs').textContent = pertinent;
+            document.getElementById('avg-score').textContent = avgScore;
+            document.getElementById('pertinence-rate').textContent = pertinenceRate + '%';
+        }
+
+        function renderDocuments() {
+            const grid = document.getElementById('documents-grid');
+            
+            if (filteredDocuments.length === 0) {
+                grid.innerHTML = '';
+                document.getElementById('empty-state').classList.remove('hidden');
+                return;
+            }
+            
+            document.getElementById('empty-state').classList.add('hidden');
+            
+            grid.innerHTML = filteredDocuments.map(doc => {
+                const score = doc.ia_score || 0;
+                const scoreClass = score >= 7 ? 'bg-green-900 text-green-400' : score >= 4 ? 'bg-yellow-900 text-yellow-400' : 'bg-red-900 text-red-400';
+                const date = new Date(doc.date_detection).toLocaleDateString('fr-FR');
+                const isReal = doc.is_real_document;
+                const title = doc.title || doc.nom_fichier || 'Document sans titre';
+                
+                return `
+                    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors">
+                        <div class="flex items-start justify-between mb-3">
+                            <div class="flex-1">
+                                <div class="flex items-center space-x-2">
+                                    <h4 class="font-semibold text-white line-clamp-2 cursor-pointer hover:text-primary transition-colors" 
+                                        onclick="window.open('${doc.source_url}', '_blank')" 
+                                        title="${isReal ? 'Document réel - Ouvrir le document source' : 'Document de test - URL simulée'}">
+                                        ${title}
+                                    </h4>
+                                    ${isReal ? `
+                                        <span class="px-2 py-1 rounded text-xs font-medium bg-blue-900 text-blue-400" title="Document réel trouvé sur le site de la ville">
+                                            Réel
+                                        </span>
+                                    ` : `
+                                        <span class="px-2 py-1 rounded text-xs font-medium bg-gray-700 text-gray-400" title="Document de test généré automatiquement">
+                                            Test
+                                        </span>
+                                    `}
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="px-2 py-1 rounded text-xs font-medium ${scoreClass}">${score}/10</span>
+                                <button onclick="toggleFavorite('${doc.id}')" 
+                                        id="fav-btn-${doc.id}"
+                                        class="text-gray-400 hover:text-yellow-400 transition-colors"
+                                        title="Ajouter aux favoris">
+                                    <i data-lucide="star" class="w-4 h-4 ${localStorage.getItem('favorite_' + doc.id) === 'true' ? 'fill-yellow-400 text-yellow-400' : ''}"></i>
+                                </button>
+                                <button onclick="showDocumentDetail('${doc.id}')" 
+                                        class="text-gray-400 hover:text-white transition-colors"
+                                        title="Voir les détails">
+                                    <i data-lucide="info" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Informations clés trouvées dans le document -->
+                        <div class="mb-3 p-3 bg-gray-700 rounded-lg">
+                            <div class="text-xs font-medium text-gray-400 mb-2">Informations clés détectées :</div>
+                            <div class="space-y-1 text-sm">
+                                ${doc.ia_resume ? `
+                                    <div class="text-gray-300 line-clamp-2">
+                                        <i data-lucide="file-text" class="w-3 h-3 inline mr-1"></i>
+                                        ${doc.ia_resume}
+                                    </div>
+                                ` : ''}
+                                ${doc.ia_justification && doc.ia_justification !== doc.ia_resume ? `
+                                    <div class="text-gray-400 text-xs line-clamp-1">
+                                        <i data-lucide="info" class="w-3 h-3 inline mr-1"></i>
+                                        ${doc.ia_justification}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center text-gray-400">
+                                <i data-lucide="calendar" class="w-4 h-4 mr-2"></i>
+                                <span>${date}</span>
+                            </div>
+                            <div class="flex items-center text-gray-400">
+                                <i data-lucide="globe" class="w-4 h-4 mr-2"></i>
+                                <span class="truncate">${new URL(doc.source_url).hostname}</span>
+                                ${isReal ? `
+                                    <i data-lucide="check-circle" class="w-4 h-4 ml-2 text-green-400" title="Document accessible"></i>
+                                ` : `
+                                    <i data-lucide="alert-circle" class="w-4 h-4 ml-2 text-yellow-400" title="URL de test (404 attendu)"></i>
+                                `}
+                            </div>
+                            ${doc.city_name ? `
+                                <div class="flex items-center text-blue-400">
+                                    <i data-lucide="map-pin" class="w-4 h-4 mr-2"></i>
+                                    <span>${doc.city_name} ${doc.city_population !== 'N/A' ? `(${doc.city_population} hab)` : ''}</span>
+                                </div>
+                            ` : ''}
+                            ${doc.text_length ? `
+                                <div class="flex items-center text-gray-400">
+                                    <i data-lucide="file" class="w-4 h-4 mr-2"></i>
+                                    <span>${doc.text_length} caractères</span>
+                                </div>
+                            ` : ''}
+                            ${doc.ia_pertinent ? `
+                                <div class="flex items-center text-green-400">
+                                    <i data-lucide="check-circle" class="w-4 h-4 mr-2"></i>
+                                    <span>Pertinent pour l'énergie renouvelable</span>
+                                </div>
+                            ` : `
+                                <div class="flex items-center text-red-400">
+                                    <i data-lucide="x-circle" class="w-4 h-4 mr-2"></i>
+                                    <span>Non pertinent</span>
+                                </div>
+                            `}
+                        </div>
+                        
+                        <div class="mt-3 flex justify-between items-center">
+                            <button onclick="window.open('${doc.source_url}', '_blank')" 
+                                    class="flex items-center space-x-2 ${isReal ? 'text-green-400 hover:text-green-300' : 'text-primary hover:text-red-400'} transition-colors text-sm"
+                                    title="${isReal ? 'Ouvrir le document réel' : 'Ouvrir le document de test (URL simulée)'}">
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                <span>${isReal ? 'Voir le document' : 'Ouvrir (test)'}</span>
+                            </button>
+                            <button onclick="copyToClipboard('${doc.source_url}')" 
+                                    class="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors text-sm"
+                                    title="Copier le lien">
+                                <i data-lucide="copy" class="w-4 h-4"></i>
+                                <span>Copier</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            lucide.createIcons();
+        }
+
+        function filterDocuments() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            const scoreFilter = document.getElementById('score-filter').value;
+            const pertinenceFilter = document.getElementById('pertinence-filter').value;
+            
+            filteredDocuments = documents.filter(doc => {
+                if (searchTerm && !doc.nom_fichier.toLowerCase().includes(searchTerm) && 
+                    !doc.ia_resume?.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                
+                const score = doc.ia_score || 0;
+                if (scoreFilter === 'high' && score < 7) return false;
+                if (scoreFilter === 'medium' && (score < 4 || score >= 7)) return false;
+                if (scoreFilter === 'low' && score >= 4) return false;
+                
+                if (pertinenceFilter === 'true' && !doc.ia_pertinent) return false;
+                if (pertinenceFilter === 'false' && doc.ia_pertinent) return false;
+                
+                return true;
+            });
+            
+            updateDocumentsStats();
+            renderDocuments();
+        }
+
+        function showDocumentDetail(docId) {
+            const doc = documents.find(d => d.id === docId);
+            if (!doc) return;
+            
+            // Create a modal with detailed information
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-xl font-semibold text-white">${doc.nom_fichier}</h3>
+                        <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-white">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <span class="text-sm text-gray-400">Score</span>
+                                <div class="text-lg font-semibold ${doc.ia_score >= 7 ? 'text-green-400' : doc.ia_score >= 4 ? 'text-yellow-400' : 'text-red-400'}">
+                                    ${doc.ia_score}/10
+                                </div>
+                            </div>
+                            <div>
+                                <span class="text-sm text-gray-400">Pertinence</span>
+                                <div class="text-lg font-semibold ${doc.ia_pertinent ? 'text-green-400' : 'text-red-400'}">
+                                    ${doc.ia_pertinent ? 'Pertinent' : 'Non pertinent'}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <span class="text-sm text-gray-400">Ville</span>
+                            <div class="text-white">${doc.city_name || 'N/A'} ${doc.city_population !== 'N/A' ? `(${doc.city_population} hab)` : ''}</div>
+                        </div>
+                        
+                        <div>
+                            <span class="text-sm text-gray-400">Date de détection</span>
+                            <div class="text-white">${new Date(doc.date_detection).toLocaleDateString('fr-FR')}</div>
+                        </div>
+                        
+                        <div>
+                            <span class="text-sm text-gray-400">URL source</span>
+                            <div class="flex items-center space-x-2">
+                                <a href="${doc.source_url}" target="_blank" class="text-primary hover:text-red-400 truncate flex-1">
+                                    ${doc.source_url}
+                                </a>
+                                <button onclick="copyToClipboard('${doc.source_url}')" class="text-gray-400 hover:text-white">
+                                    <i data-lucide="copy" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        ${doc.ia_resume ? `
+                            <div>
+                                <span class="text-sm text-gray-400">Résumé IA</span>
+                                <div class="text-gray-300 mt-1">${doc.ia_resume}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${doc.ia_justification ? `
+                            <div>
+                                <span class="text-sm text-gray-400">Justification IA</span>
+                                <div class="text-gray-300 mt-1">${doc.ia_justification}</div>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="flex justify-end space-x-3 pt-4 border-t border-gray-700">
+                            <button onclick="window.open('${doc.source_url}', '_blank')" 
+                                    class="bg-primary hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                <span>Ouvrir le document</span>
+                            </button>
+                            <button onclick="this.closest('.fixed').remove()" 
+                                    class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg">
+                                Fermer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            lucide.createIcons();
+        }
+
+        function toggleFavorite(docId) {
+            const currentState = localStorage.getItem('favorite_' + docId) === 'true';
+            const newState = !currentState;
+            
+            localStorage.setItem('favorite_' + docId, newState);
+            
+            // Update button appearance
+            const btn = document.getElementById('fav-btn-' + docId);
+            if (!btn) return;
+            
+            const icon = btn.querySelector('i');
+            
+            if (newState) {
+                icon.classList.add('fill-yellow-400', 'text-yellow-400');
+                btn.title = 'Retirer des favoris';
+            } else {
+                icon.classList.remove('fill-yellow-400', 'text-yellow-400');
+                btn.title = 'Ajouter aux favoris';
+            }
+        }
+
+        async function loadAuvergneCommunes() {
+            const minPop = document.getElementById('auvergne-min-pop').value || 5000;
+            const urlsTextarea = document.querySelector('[name="urls"]');
+            
+            try {
+                const response = await fetch(`/api/communes/auvergne?min_population=${minPop}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Erreur: ' + data.error);
+                    return;
+                }
+                
+                // Build URLs list
+                const urls = data.communes.map(c => c.url).join('\n');
+                urlsTextarea.value = urls;
+                
+                // Show success message
+                addLog(`✅ ${data.total} communes d'Auvergne chargées (pop. ≥ ${minPop})`, 'success');
+                
+            } catch (error) {
+                console.error('Error loading communes:', error);
+                alert('Erreur lors du chargement des communes: ' + error.message);
+            }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Show a small success message
+                const toast = document.createElement('div');
+                toast.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+                toast.innerHTML = 'Lien copié dans le presse-papiers';
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.remove();
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                alert('Impossible de copier le lien. Veuillez le copier manuellement.');
+            });
+        }
+
+        // Config functionality
+        let config = {};
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config/ia');
+                config = await response.json();
+                
+                document.getElementById('system-prompt').value = config.system_prompt || '';
+                document.getElementById('model-name').value = config.model_name || 'mistral';
+                document.getElementById('max-context').value = config.max_context || 1000;
+                document.getElementById('score-threshold').value = config.score_threshold || 7;
+                
+                updatePromptChars();
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        function updatePromptChars() {
+            const prompt = document.getElementById('system-prompt').value;
+            document.getElementById('prompt-chars').textContent = prompt.length;
+        }
+
+        // Set default date range to last 6 months on page load
+        function setDefaultDateRange() {
+            const today = new Date();
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(today.getMonth() - 6);
+            document.getElementById('date-start').value = sixMonthsAgo.toISOString().split('T')[0];
+            document.getElementById('date-end').value = today.toISOString().split('T')[0];
+        }
+        
+        // Apply default date range on page load
+        setDefaultDateRange();
+        
+        // Event listeners for date preset buttons
+        document.getElementById('set-last-6months')?.addEventListener('click', () => {
+            setDefaultDateRange();
+        });
+        
+        document.getElementById('set-last-12months')?.addEventListener('click', () => {
+            const today = new Date();
+            const twelveMonthsAgo = new Date();
+            twelveMonthsAgo.setMonth(today.getMonth() - 12);
+            document.getElementById('date-start').value = twelveMonthsAgo.toISOString().split('T')[0];
+            document.getElementById('date-end').value = today.toISOString().split('T')[0];
+        });
+        
+        document.getElementById('set-current-year')?.addEventListener('click', () => {
+            const today = new Date();
+            const yearStart = new Date(today.getFullYear(), 0, 1);
+            document.getElementById('date-start').value = yearStart.toISOString().split('T')[0];
+            document.getElementById('date-end').value = today.toISOString().split('T')[0];
+        });
+        
+        document.getElementById('clear-dates')?.addEventListener('click', () => {
+            document.getElementById('date-start').value = '';
+            document.getElementById('date-end').value = '';
+        });
+        
+        // Event listeners for documents
+        document.getElementById('search-input')?.addEventListener('input', filterDocuments);
+        document.getElementById('score-filter')?.addEventListener('change', filterDocuments);
+        document.getElementById('pertinence-filter')?.addEventListener('change', filterDocuments);
+        
+        document.getElementById('refresh-documents')?.addEventListener('click', loadDocuments);
+        
+        document.getElementById('purge-documents')?.addEventListener('click', async () => {
+            if (!confirm('⚠️ ATTENTION !\\n\\nCette action va supprimer DÉFINITIVEMENT tous les documents analysés.\\nCette opération est IRRÉVERSIBLE.\\n\\nÊtes-vous sûr de vouloir continuer ?')) {
+                return;
+            }
+            
+            if (!confirm('🔴 CONFIRMATION FINALE\\n\\nTous les fichiers JSON seront supprimés du disque.\\n\\nDernière chance : annuler ou continuer ?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/documents/purge', {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`✅ Purge réussie !\\n\\n${result.message}\\nDocuments supprimés : ${result.deleted_count}`);
+                    
+                    // Reload documents to show empty state
+                    documents = [];
+                    filteredDocuments = [];
+                    updateDocumentsStats();
+                    renderDocuments();
+                    
+                    // Show empty state
+                    document.getElementById('empty-state').classList.remove('hidden');
+                    document.getElementById('documents-grid').innerHTML = '';
+                    
+                } else {
+                    alert(`❌ Erreur lors de la purge : ${result.error}`);
+                }
+            } catch (error) {
+                alert(`❌ Erreur de communication : ${error.message}`);
+            }
+        });
+        
+        // Event listeners for config
+        document.getElementById('system-prompt')?.addEventListener('input', updatePromptChars);
+        
+        document.getElementById('save-config')?.addEventListener('click', async () => {
+            try {
+                config.system_prompt = document.getElementById('system-prompt').value;
+                config.model_name = document.getElementById('model-name').value;
+                config.max_context = parseInt(document.getElementById('max-context').value);
+                config.score_threshold = parseInt(document.getElementById('score-threshold').value);
+                
+                const response = await fetch('/api/config/ia', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    alert('Configuration sauvegardée avec succès !');
+                } else {
+                    const error = await response.json();
+                    alert('Erreur: ' + error.error);
+                }
+            } catch (error) {
+                alert('Erreur: ' + error.message);
+            }
+        });
+        
+        // Toggle API configuration fields based on provider
+        function toggleApiConfig() {
+            const provider = document.getElementById('api_provider').value;
+            const apiKeyField = document.getElementById('api_key_field');
+            const ollamaModelField = document.getElementById('ollama_model_field');
+            
+            if (provider === 'ollama') {
+                apiKeyField.style.display = 'none';
+                ollamaModelField.style.display = 'block';
+            } else {
+                apiKeyField.style.display = 'block';
+                ollamaModelField.style.display = 'none';
+            }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleApiConfig();
+        });
+    </script>
+
+    <style>
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            color: rgb(209 213 219);
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+        .nav-btn:hover {
+            background-color: rgb(55 65 81);
+            color: white;
+        }
+        .nav-btn.active {
+            background-color: rgb(55 65 81);
+            color: white;
+        }
+        .content-section {
+            transition: opacity 0.2s;
+        }
+    </style>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documents - Hardscrapper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .sidebar {
+            background-color: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+        }
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            color: #6c757d;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .nav-btn:hover {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+        .nav-btn.active {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+        .main-header {
+            background-color: white;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .document-card {
+            background-color: white;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            border: 1px solid #e9ecef;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            transition: all 0.2s;
+        }
+        .document-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        .score-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .score-high { 
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .score-medium { 
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .score-low { 
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border: 1px solid #007bff;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #0056b3;
+        }
+        .btn-outline {
+            background-color: transparent;
+            border: 1px solid #007bff;
+            color: #007bff;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-outline:hover {
+            background-color: #007bff;
+            color: white;
+        }
+        .input-field {
+            background: white;
+            border: 1px solid #ced4da;
+            color: #495057;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+        .logo-box {
+            background-color: #007bff;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .main-content {
+            background-color: #f8f9fa;
+        }
+        .stats-card {
+            background-color: white;
+            border: 1px solid #e9ecef;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        }
+        .close {
+            color: #6c757d;
+            float: right;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: #495057;
+        }
+        .keyword-tag {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            display: inline-block;
+            margin: 0.125rem;
+        }
+    </style>
+</head>
+<body class="text-dark">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-16 sidebar flex flex-col">
+            <!-- Logo -->
+            <div class="p-4 border-b border-gray-300">
+                <div class="w-8 h-8 logo-box">
+                    <i data-lucide="zap" class="w-5 h-5 text-white"></i>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-6 space-y-2">
+                <a href="/" class="nav-btn">
+                    <i data-lucide="home" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Accueil</span>
+                </a>
+                <a href="/documents" class="nav-btn active">
+                    <i data-lucide="file-text" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Documents</span>
+                </a>
+                <a href="/config" class="nav-btn">
+                    <i data-lucide="settings" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Config IA</span>
+                </a>
+            </nav>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-300">
+                <div class="text-xs text-muted">
+                    <p>Version 1.0.0</p>
+                    <p>© 2026 Hardscrapper</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-hidden">
+            <!-- Header -->
+            <header class="main-header px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold">Documents analysés</h1>
+                        <p class="text-muted text-sm mt-1">Consultez les résultats de l'analyse IA des documents PDF</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="export-btn" class="btn-outline">
+                            <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                            Exporter
+                        </button>
+                        <button id="refresh-btn" class="btn-primary">
+                            <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i>
+                            Actualiser
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="main-content p-6 overflow-y-auto h-full">
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="stats-card">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                                <i data-lucide="file-text" class="w-6 h-6 text-blue-600"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-muted">Total documents</p>
+                                <p class="text-xl font-bold" id="total-docs">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                                <i data-lucide="check-circle" class="w-6 h-6 text-green-600"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-muted">Pertinents</p>
+                                <p class="text-xl font-bold text-green-600" id="pertinent-docs">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
+                                <i data-lucide="alert-circle" class="w-6 h-6 text-yellow-600"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-muted">Score moyen</p>
+                                <p class="text-xl font-bold text-yellow-600" id="avg-score">0.0</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                                <i data-lucide="trending-up" class="w-6 h-6 text-purple-600"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm text-muted">Taux pertinence</p>
+                                <p class="text-xl font-bold text-purple-600" id="pertinence-rate">0%</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="card mb-6">
+                    <div class="flex flex-wrap gap-4 items-center">
+                        <div class="flex-1 min-w-64">
+                            <input type="text" id="search-input" placeholder="Rechercher dans les documents..." 
+                                   class="input-field w-full">
+                        </div>
+                        <select id="score-filter" class="input-field">
+                            <option value="">Tous les scores</option>
+                            <option value="high">Score élevé (7-10)</option>
+                            <option value="medium">Score moyen (4-6)</option>
+                            <option value="low">Score faible (0-3)</option>
+                        </select>
+                        <select id="pertinence-filter" class="input-field">
+                            <option value="">Tous les documents</option>
+                            <option value="true">Pertinents uniquement</option>
+                            <option value="false">Non pertinents uniquement</option>
+                        </select>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="favorites-filter" class="w-4 h-4 text-blue-600 rounded">
+                            <span class="text-sm">⭐ Favoris uniquement</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Documents Grid -->
+                <div id="documents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Documents will be loaded here -->
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading" class="text-center py-12">
+                    <i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin text-muted"></i>
+                    <p class="mt-2 text-muted">Chargement des documents...</p>
+                </div>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="text-center py-12 hidden">
+                    <i data-lucide="file-x" class="w-16 h-16 mx-auto text-muted mb-4"></i>
+                    <h3 class="text-lg font-semibold mb-2">Aucun document trouvé</h3>
+                    <p class="text-muted">Aucun document ne correspond à vos critères de filtrage.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Document Detail Modal -->
+    <div id="document-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="modal-content">
+                <!-- Modal content will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let documents = [];
+        let filteredDocuments = [];
+
+        // Load documents
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/documents');
+                documents = await response.json();
+                filteredDocuments = [...documents];
+                
+                updateStats();
+                renderDocuments();
+                
+                // Hide loading, show content
+                document.getElementById('loading').classList.add('hidden');
+                
+                if (filteredDocuments.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error loading documents:', error);
+                document.getElementById('loading').innerHTML = '<p class="text-red-600">Erreur de chargement</p>';
+            }
+        }
+
+        // Update statistics
+        function updateStats() {
+            const total = filteredDocuments.length;
+            const pertinent = filteredDocuments.filter(d => d.ia_pertinent).length;
+            const avgScore = total > 0 ? 
+                (filteredDocuments.reduce((sum, d) => sum + (d.ia_score || 0), 0) / total).toFixed(1) : 0;
+            const pertinenceRate = total > 0 ? Math.round((pertinent / total) * 100) : 0;
+
+            document.getElementById('total-docs').textContent = total;
+            document.getElementById('pertinent-docs').textContent = pertinent;
+            document.getElementById('avg-score').textContent = avgScore;
+            document.getElementById('pertinence-rate').textContent = pertinenceRate + '%';
+        }
+
+        // Render documents
+        function renderDocuments() {
+            const grid = document.getElementById('documents-grid');
+            
+            if (filteredDocuments.length === 0) {
+                grid.innerHTML = '';
+                document.getElementById('empty-state').classList.remove('hidden');
+                return;
+            }
+            
+            document.getElementById('empty-state').classList.add('hidden');
+            
+            grid.innerHTML = filteredDocuments.map(doc => {
+                const score = doc.ia_score || 0;
+                const scoreClass = score >= 7 ? 'score-high' : score >= 4 ? 'score-medium' : 'score-low';
+                const date = new Date(doc.date_detection).toLocaleDateString('fr-FR');
+                
+                const isFavorite = localStorage.getItem('favorite_' + doc.id) === 'true';
+                
+                return `
+                    <div class="document-card cursor-pointer relative" onclick="showDocumentDetail('${doc.id}')">
+                        <button class="absolute top-3 right-3 z-10 p-2 hover:bg-gray-700 rounded-full transition-colors" 
+                                onclick="event.stopPropagation(); toggleFavorite('${doc.id}')" 
+                                id="fav-btn-${doc.id}"
+                                title="${isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}">
+                            <i data-lucide="star" class="w-5 h-5 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'}"></i>
+                        </button>
+                        <div class="flex items-start justify-between mb-3 pr-10">
+                            <h3 class="font-semibold text-lg line-clamp-2">${doc.nom_fichier}</h3>
+                            <span class="score-badge ${scoreClass}">${score}/10</span>
+                        </div>
+                        
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center text-muted">
+                                <i data-lucide="calendar" class="w-4 h-4 mr-2"></i>
+                                <span>${date}</span>
+                            </div>
+                            <div class="flex items-center text-muted">
+                                <i data-lucide="globe" class="w-4 h-4 mr-2"></i>
+                                <span class="truncate">${new URL(doc.source_url).hostname}</span>
+                            </div>
+                            ${doc.ia_pertinent ? `
+                                <div class="flex items-center text-green-600">
+                                    <i data-lucide="check-circle" class="w-4 h-4 mr-2"></i>
+                                    <span>Pertinent</span>
+                                </div>
+                            ` : `
+                                <div class="flex items-center text-red-600">
+                                    <i data-lucide="x-circle" class="w-4 h-4 mr-2"></i>
+                                    <span>Non pertinent</span>
+                                </div>
+                            `}
+                        </div>
+                        
+                        ${doc.ia_resume ? `
+                            <div class="mt-3 p-2 bg-light rounded text-sm">
+                                <p class="line-clamp-2">${doc.ia_resume}</p>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+            
+            // Reinitialize icons
+            lucide.createIcons();
+        }
+
+        // Toggle favorite
+        function toggleFavorite(docId) {
+            const currentState = localStorage.getItem('favorite_' + docId) === 'true';
+            const newState = !currentState;
+            
+            localStorage.setItem('favorite_' + docId, newState);
+            
+            // Update button appearance
+            const btn = document.getElementById('fav-btn-' + docId);
+            const icon = btn.querySelector('i');
+            
+            if (newState) {
+                icon.classList.add('fill-yellow-400', 'text-yellow-400');
+                icon.classList.remove('text-gray-400');
+                btn.title = 'Retirer des favoris';
+            } else {
+                icon.classList.remove('fill-yellow-400', 'text-yellow-400');
+                icon.classList.add('text-gray-400');
+                btn.title = 'Ajouter aux favoris';
+            }
+            
+            // Refresh if favorites filter is active
+            const favFilter = document.getElementById('favorites-filter');
+            if (favFilter && favFilter.checked) {
+                filterDocuments();
+            }
+        }
+
+        // Filter documents
+        function filterDocuments() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            const scoreFilter = document.getElementById('score-filter').value;
+            const pertinenceFilter = document.getElementById('pertinence-filter').value;
+            const favoritesOnly = document.getElementById('favorites-filter')?.checked || false;
+            
+            filteredDocuments = documents.filter(doc => {
+                // Favorites filter
+                if (favoritesOnly && localStorage.getItem('favorite_' + doc.id) !== 'true') {
+                    return false;
+                }
+                
+                // Search filter
+                if (searchTerm && !doc.nom_fichier.toLowerCase().includes(searchTerm) && 
+                    !doc.ia_resume?.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                
+                // Score filter
+                const score = doc.ia_score || 0;
+                if (scoreFilter === 'high' && score < 7) return false;
+                if (scoreFilter === 'medium' && (score < 4 || score >= 7)) return false;
+                if (scoreFilter === 'low' && score >= 4) return false;
+                
+                // Pertinence filter
+                if (pertinenceFilter === 'true' && !doc.ia_pertinent) return false;
+                if (pertinenceFilter === 'false' && doc.ia_pertinent) return false;
+                
+                return true;
+            });
+            
+            updateStats();
+            renderDocuments();
+        }
+
+        // Show document detail
+        function showDocumentDetail(docId) {
+            const doc = documents.find(d => d.id === docId);
+            if (!doc) return;
+            
+            const modal = document.getElementById('document-modal');
+            const content = document.getElementById('modal-content');
+            
+            const score = doc.ia_score || 0;
+            const scoreClass = score >= 7 ? 'score-high' : score >= 4 ? 'score-medium' : 'score-low';
+            const date = new Date(doc.date_detection).toLocaleDateString('fr-FR');
+            
+            content.innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-2">${doc.nom_fichier}</h2>
+                        <div class="flex items-center space-x-4">
+                            <span class="score-badge ${scoreClass}">Score: ${score}/10</span>
+                            <span class="${doc.ia_pertinent ? 'text-green-600' : 'text-red-600'}">
+                                ${doc.ia_pertinent ? '✓ Pertinent' : '✗ Non pertinent'}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-sm text-muted">Date de détection</p>
+                            <p class="font-medium">${date}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-muted">Source</p>
+                            <a href="${doc.source_url}" target="_blank" class="text-blue-600 hover:underline">
+                                ${new URL(doc.source_url).hostname}
+                            </a>
+                        </div>
+                    </div>
+                    
+                    ${doc.ia_resume ? `
+                        <div>
+                            <h3 class="font-semibold mb-2">Résumé IA</h3>
+                            <p class="bg-light p-3 rounded">${doc.ia_resume}</p>
+                        </div>
+                    ` : ''}
+                    
+                    ${doc.ia_justification ? `
+                        <div>
+                            <h3 class="font-semibold mb-2">Justification</h3>
+                            <p class="bg-light p-3 rounded">${doc.ia_justification}</p>
+                        </div>
+                    ` : ''}
+                    
+                    <div>
+                        <h3 class="font-semibold mb-2">Texte complet</h3>
+                        <div class="bg-light p-3 rounded max-h-64 overflow-y-auto">
+                            <pre class="whitespace-pre-wrap text-sm">${doc.texte}</pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            modal.style.display = 'block';
+        }
+
+        // Event listeners
+        document.getElementById('search-input').addEventListener('input', filterDocuments);
+        document.getElementById('score-filter').addEventListener('change', filterDocuments);
+        document.getElementById('pertinence-filter').addEventListener('change', filterDocuments);
+        document.getElementById('favorites-filter').addEventListener('change', filterDocuments);
+        
+        document.getElementById('refresh-btn').addEventListener('click', loadDocuments);
+        
+        document.getElementById('export-btn').addEventListener('click', () => {
+            window.location.href = '/api/export';
+        });
+        
+        // Modal close
+        document.querySelector('.close').addEventListener('click', () => {
+            document.getElementById('document-modal').style.display = 'none';
+        });
+        
+        window.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('document-modal')) {
+                document.getElementById('document-modal').style.display = 'none';
+            }
+        });
+        
+        // Initialize
+        loadDocuments();
+    </script>
+</body>
+</html>

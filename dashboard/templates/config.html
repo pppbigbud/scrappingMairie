@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration IA - Hardscrapper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .sidebar {
+            background-color: #f8f9fa;
+            border-right: 1px solid #e9ecef;
+        }
+        .nav-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            color: #6c757d;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .nav-btn:hover {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+        .nav-btn.active {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+        .main-header {
+            background-color: white;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border: 1px solid #007bff;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+            border-color: #0056b3;
+        }
+        .btn-success {
+            background-color: #28a745;
+            border: 1px solid #28a745;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-success:hover {
+            background-color: #1e7e34;
+            border-color: #1e7e34;
+        }
+        .input-field {
+            background: white;
+            border: 1px solid #ced4da;
+            color: #495057;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #80bdff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+        }
+        .keyword-tag {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .keyword-tag button {
+            color: #dc3545;
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+        }
+        .keyword-tag button:hover {
+            color: #c82333;
+        }
+        .logo-box {
+            background-color: #007bff;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .main-content {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body class="text-dark">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-16 sidebar flex flex-col">
+            <!-- Logo -->
+            <div class="p-4 border-b border-gray-300">
+                <div class="w-8 h-8 logo-box">
+                    <i data-lucide="zap" class="w-5 h-5 text-white"></i>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 px-4 py-6 space-y-2">
+                <a href="/" class="nav-btn">
+                    <i data-lucide="home" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Accueil</span>
+                </a>
+                <a href="/documents" class="nav-btn">
+                    <i data-lucide="file-text" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Documents</span>
+                </a>
+                <a href="/config" class="nav-btn active">
+                    <i data-lucide="settings" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Config IA</span>
+                </a>
+            </nav>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-300">
+                <div class="text-xs text-muted">
+                    <p>Version 1.0.0</p>
+                    <p>© 2026 Hardscrapper</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-hidden">
+            <!-- Header -->
+            <header class="main-header px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold">Configuration IA</h1>
+                        <p class="text-muted text-sm mt-1">Personnalisez le prompt système et les paramètres d'analyse</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="test-prompt" class="btn-primary">
+                            <i data-lucide="play" class="w-4 h-4 mr-2"></i>
+                            Tester
+                        </button>
+                        <button id="save-config" class="btn-success">
+                            <i data-lucide="save" class="w-4 h-4 mr-2"></i>
+                            Sauvegarder
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="main-content p-6 overflow-y-auto h-full">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <!-- System Prompt -->
+                    <div class="card">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-semibold">Prompt Système</h2>
+                            <span class="text-sm text-muted">
+                                <span id="prompt-chars">0</span> caractères
+                            </span>
+                        </div>
+                        <textarea id="system-prompt" rows="20" class="input-field w-full font-mono text-sm resize-none"></textarea>
+                    </div>
+
+                    <!-- Settings Panel -->
+                    <div class="space-y-6">
+                        <!-- Model Settings -->
+                        <div class="card">
+                            <h2 class="text-xl font-semibold mb-4">Paramètres du Modèle</h2>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">Modèle IA</label>
+                                    <select id="model-name" class="input-field w-full">
+                                        <option value="mistral">Mistral</option>
+                                        <option value="llama2">Llama 2</option>
+                                        <option value="codellama">Code Llama</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">Contexte max (caractères)</label>
+                                    <input type="number" id="max-context" value="1000" min="100" max="8000" 
+                                           class="input-field w-full">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">Seuil de pertinence</label>
+                                    <input type="number" id="score-threshold" value="7" min="1" max="10" 
+                                           class="input-field w-full">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Energy Keywords -->
+                        <div class="card">
+                            <h2 class="text-xl font-semibold mb-4">Mots-clés Énergie</h2>
+                            <div class="space-y-3">
+                                <div class="flex items-center space-x-2">
+                                    <input type="text" id="new-keyword" placeholder="Ajouter un mot-clé..." 
+                                           class="input-field flex-1">
+                                    <button id="add-keyword" class="btn-primary">
+                                        <i data-lucide="plus" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                                <div id="keywords-list" class="flex flex-wrap gap-2">
+                                    <!-- Keywords will be loaded here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Test Section -->
+                        <div class="card">
+                            <h2 class="text-xl font-semibold mb-4">Test du Prompt</h2>
+                            <div class="space-y-3">
+                                <textarea id="test-text" rows="4" placeholder="Collez un texte à tester..." 
+                                          class="input-field w-full resize-none"></textarea>
+                                <button id="run-test" class="btn-primary w-full">
+                                    <i data-lucide="play" class="w-4 h-4 mr-2"></i>
+                                    Lancer le test
+                                </button>
+                                <div id="test-result" class="hidden">
+                                    <h3 class="font-semibold mb-2">Résultat :</h3>
+                                    <pre id="test-output" class="bg-light p-3 rounded text-sm text-muted whitespace-pre-wrap"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let config = {};
+
+        // Load configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config/ia');
+                config = await response.json();
+                
+                // Fill form fields
+                document.getElementById('system-prompt').value = config.system_prompt || '';
+                document.getElementById('model-name').value = config.model_name || 'mistral';
+                document.getElementById('max-context').value = config.max_context || 1000;
+                document.getElementById('score-threshold').value = config.score_threshold || 7;
+                
+                // Load keywords
+                loadKeywords(config.energy_keywords || []);
+                
+                updatePromptChars();
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        // Load keywords
+        function loadKeywords(keywords) {
+            const container = document.getElementById('keywords-list');
+            container.innerHTML = '';
+            
+            keywords.forEach(keyword => {
+                const tag = document.createElement('div');
+                tag.className = 'flex items-center space-x-1 bg-gray-600 px-3 py-1 rounded-full text-sm';
+                tag.innerHTML = `
+                    <span>${keyword}</span>
+                    <button onclick="removeKeyword('${keyword}')" class="text-red-400 hover:text-red-300">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                `;
+                container.appendChild(tag);
+            });
+            
+            lucide.createIcons();
+        }
+
+        // Add keyword
+        document.getElementById('add-keyword').addEventListener('click', () => {
+            const input = document.getElementById('new-keyword');
+            const keyword = input.value.trim().toLowerCase();
+            
+            if (keyword && !config.energy_keywords.includes(keyword)) {
+                config.energy_keywords.push(keyword);
+                loadKeywords(config.energy_keywords);
+                input.value = '';
+            }
+        });
+
+        // Remove keyword
+        function removeKeyword(keyword) {
+            config.energy_keywords = config.energy_keywords.filter(k => k !== keyword);
+            loadKeywords(config.energy_keywords);
+        }
+
+        // Update prompt character count
+        function updatePromptChars() {
+            const prompt = document.getElementById('system-prompt').value;
+            document.getElementById('prompt-chars').textContent = prompt.length;
+        }
+
+        document.getElementById('system-prompt').addEventListener('input', updatePromptChars);
+
+        // Save configuration
+        document.getElementById('save-config').addEventListener('click', async () => {
+            try {
+                // Update config object
+                config.system_prompt = document.getElementById('system-prompt').value;
+                config.model_name = document.getElementById('model-name').value;
+                config.max_context = parseInt(document.getElementById('max-context').value);
+                config.score_threshold = parseInt(document.getElementById('score-threshold').value);
+                
+                const response = await fetch('/api/config/ia', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    alert('Configuration sauvegardée avec succès !');
+                } else {
+                    const error = await response.json();
+                    alert('Erreur: ' + error.error);
+                }
+            } catch (error) {
+                alert('Erreur: ' + error.message);
+            }
+        });
+
+        // Test prompt
+        document.getElementById('run-test').addEventListener('click', async () => {
+            const testText = document.getElementById('test-text').value.trim();
+            if (!testText) {
+                alert('Veuillez entrer un texte à tester');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/test-prompt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: testText,
+                        prompt: document.getElementById('system-prompt').value
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('test-output').textContent = JSON.stringify(result.analysis, null, 2);
+                    document.getElementById('test-result').classList.remove('hidden');
+                } else {
+                    alert('Erreur: ' + result.error);
+                }
+            } catch (error) {
+                alert('Erreur: ' + error.message);
+            }
+        });
+
+        // Initialize
+        loadConfig();
+    </script>
+</body>
+</html>

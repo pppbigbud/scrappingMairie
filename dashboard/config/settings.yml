@@ -1,0 +1,47 @@
+ai:
+  api_key: ''
+  api_provider: groq
+  batch_size: 2
+  context_size: 1000
+  model: mistral
+  pause_seconds: 2
+  score_threshold: 7
+  search_depth: profond
+  temperature: 0.1
+  timeout_seconds: 60
+batch:
+  cache_enabled: true
+  cpu_threads: 4
+  debug_mode: false
+  max_memory: 4
+crawling:
+  css_selectors: ''
+  deep_crawling: true
+  http_timeout: 10
+  max_depth: 3
+  max_pages: 30
+  mode: single
+  predefined_urls:
+  - https://www.nivigne-et-suran.fr/
+  rate_limit: 0.5
+  user_agent: Hardscrapper/1.0
+filtering:
+  date_end: '2026-02-02'
+  date_start: '2025-08-02'
+  document_types:
+  - pdf
+  - docx
+  - odt
+  - html
+  energy_keywords:
+  - chaufferie biomasse
+  - "r\xE9seau de chaleur"
+  - "bois \xE9nergie"
+  - "projet \xE9nerg\xE9tique collectif"
+  - "chaudi\xE8re bois"
+  - chauffage collectif
+  - "granul\xE9s"
+  - plaquettes
+  - pellets
+  - "\xE9nergie renouvelable"
+  min_score: 50
