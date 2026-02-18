@@ -2683,35 +2683,26 @@ def config_ia():
 
 @app.route('/api/documents/purge', methods=['DELETE'])
 def purge_documents():
-    """Delete all analyzed documents permanently"""
+    """Delete all analyzed result files from data/resultats/"""
     try:
-        base_data_dir = '../openclaw_backup_20260201_1306/data/pdf_texts'
-        
-        if not os.path.exists(base_data_dir):
-            return jsonify({'error': 'No documents directory found'}), 404
-        
-        # Count files before deletion
-        files_count = 0
-        for city_dir in os.listdir(base_data_dir):
-            city_path = os.path.join(base_data_dir, city_dir)
-            if os.path.isdir(city_path):
-                files_count += len([f for f in os.listdir(city_path) if f.endswith('.json')])
-        
-        # Delete all JSON files in all city directories
+        resultats_dir = os.path.join(_PROJECT_ROOT, 'data', 'resultats')
+
+        if not os.path.exists(resultats_dir):
+            return jsonify({'message': 'Aucun document à purger', 'deleted_count': 0})
+
+        files = [f for f in os.listdir(resultats_dir) if f.endswith('.json')]
         deleted_count = 0
-        for city_dir in os.listdir(base_data_dir):
-            city_path = os.path.join(base_data_dir, city_dir)
-            if os.path.isdir(city_path):
-                for filename in os.listdir(city_path):
-                    if filename.endswith('.json'):
-                        filepath = os.path.join(city_path, filename)
-                        os.remove(filepath)
-                        deleted_count += 1
-        
+        for filename in files:
+            filepath = os.path.join(resultats_dir, filename)
+            try:
+                os.remove(filepath)
+                deleted_count += 1
+            except OSError:
+                pass
+
         return jsonify({
-            'message': f'Successfully deleted {deleted_count} documents from all cities',
+            'message': f'{deleted_count} fichier(s) supprimé(s)',
             'deleted_count': deleted_count,
-            'files_found': files_count
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
