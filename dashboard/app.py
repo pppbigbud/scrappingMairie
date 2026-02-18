@@ -1052,6 +1052,13 @@ def run_analysis(config):
 
             status_queue.put({'status': 'running', 'message': f'🎯 {len(targets)} site(s) à scraper', 'timestamp': datetime.now().isoformat()})
 
+            # ── Mode test : forcer seuils bas ─────────────────────────────────
+            nom_campagne = config.get('nom_campagne', '')
+            if 'TEST' in nom_campagne.upper():
+                config.setdefault('ai', {})['score_threshold'] = 1
+                config['ai']['mode'] = config['ai'].get('mode', 'manuel')
+                status_queue.put({'status': 'running', 'message': '🧪 Mode test détecté — seuil IA forcé à 1', 'timestamp': datetime.now().isoformat()})
+
             # Dossier de sortie
             output_dir = os.path.join(_PROJECT_ROOT, 'data', 'resultats')
             os.makedirs(output_dir, exist_ok=True)

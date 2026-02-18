@@ -759,7 +759,8 @@ class ScraperCore:
 
                 for link in sub_soup.find_all("a", href=True):
                     href = link.get("href", "")
-                    full_url = urljoin(url, href)
+                    # Résoudre l'URL relative par rapport à la section (pas la page d'accueil)
+                    full_url = urljoin(section_url, href)
                     if full_url in seen_urls:
                         continue
                     if urlparse(full_url).netloc != base_netloc:
