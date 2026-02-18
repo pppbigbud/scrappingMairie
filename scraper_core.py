@@ -524,6 +524,63 @@ class ScraperCore:
         filtres = [r for r in resultats if r.get("score", 0) >= self.seuil_confiance]
         return sorted(filtres, key=lambda r: r.get("score", 0), reverse=True)
 
+    # ── Mode turbo : pré-qualification rapide ─────────────────────────────────
+
+    # Patterns d'URL typiques des délibérations / conseils municipaux
+    _TURBO_URL_PATTERNS = re.compile(
+        r"/(conseil|deliber|seance|actes|documents-officiels|budget-municipal|pv-|cr-conseil)",
+        re.IGNORECASE,
+    )
+    # Mots-clés à chercher dans title + 500 premiers chars du body
+    _TURBO_KW = [
+        "délibération", "deliberation", "conseil municipal", "budget",
+        "rénovation", "renovation", "travaux", "énergie", "energie",
+        "projet", "subvention", "marché public",
+    ]
+
+    def prequalifier_commune(
+        self, url: str, commune: str, timeout: int = 2
+    ) -> Tuple[bool, str, float]:
+        """
+        Pré-qualification rapide d'une commune en mode turbo.
+        Retourne (qualifiée, raison, durée_s).
+        Critères : mots-clés dans title/body500, flux RSS, liens /conseil ou /deliber.
+        """
+        import time as _time
+        t0 = _time.time()
+        session = self._make_session()
+        try:
+            r = session.get(url, timeout=timeout, allow_redirects=True)
+            elapsed = _time.time() - t0
+            if r.status_code != 200:
+                return False, f"HTTP {r.status_code}", elapsed
+
+            html = r.text
+            # 1. Mots-clés dans <title> + 500 premiers chars du body
+            title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+            title = title_match.group(1).lower() if title_match else ""
+            body_start = html[:2000].lower()
+            kw_found = next(
+                (kw for kw in self._TURBO_KW if kw in title or kw in body_start), None
+            )
+            if kw_found:
+                return True, f"mot-clé '{kw_found}'", _time.time() - t0
+
+            # 2. Flux RSS
+            if re.search(r'type=["\']application/rss\+xml', html, re.IGNORECASE):
+                return True, "flux RSS détecté", _time.time() - t0
+
+            # 3. Liens vers /conseil ou /deliber dans le HTML
+            if self._TURBO_URL_PATTERNS.search(html):
+                return True, "lien /conseil ou /deliber détecté", _time.time() - t0
+
+            return False, "aucun signal", _time.time() - t0
+
+        except requests.exceptions.Timeout:
+            return False, f"timeout ({timeout}s)", _time.time() - t0
+        except requests.RequestException as exc:
+            return False, f"erreur réseau : {exc.__class__.__name__}", _time.time() - t0
+
     # ── Scraping d'un site ─────────────────────────────────────────────────────
 
     def scraper_site(

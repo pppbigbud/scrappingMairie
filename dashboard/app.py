@@ -1079,21 +1079,82 @@ def run_analysis(config):
 
             all_results = []
             total = len(targets)
+            turbo_mode = config.get('turbo_mode', False)
+            parallel_requests = max(1, min(10, int(config.get('parallel_requests', 3))))
 
-            for i, target in enumerate(targets, 1):
-                status_queue.put({'status': 'running', 'message': f'[{i}/{total}] 🔍 Scraping {target["commune"]} ({target["url"]})...', 'timestamp': datetime.now().isoformat()})
+            # ── Estimation du gain de temps ───────────────────────────────────
+            if turbo_mode:
+                t_normal_min = round(total * 90 / 60)   # ~90s par commune en mode normal
+                t_turbo_min  = round(total * 5 / 60 / parallel_requests + total * 0.3 * 90 / 60 / parallel_requests)
+                status_queue.put({'status': 'running', 'message': (
+                    f'⚡ Mode turbo activé — {parallel_requests} requête(s) parallèle(s) | '
+                    f'~{t_turbo_min} min estimées pour {total} communes (vs ~{t_normal_min} min en mode normal)'
+                ), 'timestamp': datetime.now().isoformat()})
 
+            # ── Étape 1 turbo : pré-qualification parallèle ───────────────────
+            if turbo_mode and total > 1:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                import time as _time
+
+                qualifies = []
+                ignores = []
+
+                def _prequalifier(target):
+                    t0 = _time.time()
+                    ok, raison, duree = scraper.prequalifier_commune(target['url'], target['commune'], timeout=2)
+                    return target, ok, raison, duree
+
+                status_queue.put({'status': 'running', 'message': f'⚡ Pré-qualification de {total} communes ({parallel_requests} en parallèle)...', 'timestamp': datetime.now().isoformat()})
+
+                with ThreadPoolExecutor(max_workers=parallel_requests) as executor:
+                    futures = {executor.submit(_prequalifier, t): t for t in targets}
+                    for future in as_completed(futures):
+                        target, ok, raison, duree = future.result()
+                        if ok:
+                            qualifies.append(target)
+                            status_queue.put({'status': 'running', 'message': f'  ⚡ ✅ {target["commune"]} — pré-qualifiée ({raison}, {duree:.1f}s)', 'timestamp': datetime.now().isoformat()})
+                        else:
+                            ignores.append(target)
+                            status_queue.put({'status': 'running', 'message': f'  ⚡ ⏭️ {target["commune"]} — ignorée ({raison}, {duree:.1f}s)', 'timestamp': datetime.now().isoformat()})
+
+                status_queue.put({'status': 'running', 'message': (
+                    f'⚡ Pré-qualification terminée : {len(qualifies)}/{total} communes retenues'
+                    f' ({len(ignores)} ignorées)'
+                ), 'timestamp': datetime.now().isoformat()})
+                targets_a_scraper = qualifies
+            else:
+                targets_a_scraper = targets
+
+            # ── Étape 2 : Scraping complet (séquentiel ou parallèle) ─────────
+            total_scrape = len(targets_a_scraper)
+
+            def _scraper_target(args):
+                i, target = args
+                results_local = []
                 def cb(msg, level="info"):
                     status_map = {"warning": "warning", "error": "error", "info": "running", "success": "running"}
                     status_queue.put({'status': status_map.get(level, 'running'), 'message': f'  ↳ {msg}', 'timestamp': datetime.now().isoformat()})
-
                 try:
                     docs = scraper.scraper_site(target['url'], target['commune'], target['dept'], status_callback=cb)
                     pertinents = [d for d in docs if d.get('pertinent')]
-                    status_queue.put({'status': 'running', 'message': f'  ✅ {target["commune"]} : {len(docs)} docs trouvés, {len(pertinents)} pertinents', 'timestamp': datetime.now().isoformat()})
-                    all_results.extend(docs)
+                    status_queue.put({'status': 'running', 'message': f'  ✅ {target["commune"]} : {len(docs)} docs, {len(pertinents)} pertinents', 'timestamp': datetime.now().isoformat()})
+                    results_local.extend(docs)
                 except Exception as exc:
                     status_queue.put({'status': 'warning', 'message': f'  ⚠️ Erreur sur {target["commune"]} : {exc}', 'timestamp': datetime.now().isoformat()})
+                return results_local
+
+            if turbo_mode and parallel_requests > 1 and total_scrape > 1:
+                from concurrent.futures import ThreadPoolExecutor as _TPE
+                with _TPE(max_workers=parallel_requests) as executor:
+                    for i, target in enumerate(targets_a_scraper, 1):
+                        status_queue.put({'status': 'running', 'message': f'[{i}/{total_scrape}] 🔍 Scraping {target["commune"]}...', 'timestamp': datetime.now().isoformat()})
+                    futures_scrape = list(executor.map(_scraper_target, enumerate(targets_a_scraper, 1)))
+                    for docs in futures_scrape:
+                        all_results.extend(docs)
+            else:
+                for i, target in enumerate(targets_a_scraper, 1):
+                    status_queue.put({'status': 'running', 'message': f'[{i}/{total_scrape}] 🔍 Scraping {target["commune"]} ({target["url"]})...', 'timestamp': datetime.now().isoformat()})
+                    all_results.extend(_scraper_target((i, target)))
 
             # ── Analyse IA — dispatcher multi-mode ───────────────────────────
             pertinents_scraping = [d for d in all_results if d.get('pertinent')]

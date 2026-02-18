@@ -311,6 +311,33 @@
                             </select>
                         </div>
 
+                        <!-- Mode turbo -->
+                        <div class="pt-2 border-t border-gray-700">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs text-gray-400 flex items-center gap-1">
+                                    <i data-lucide="zap" class="w-3 h-3 text-yellow-400"></i>
+                                    Mode turbo ⚡
+                                    <button class="help-btn" onclick="aide('turbo_mode')">?</button>
+                                </label>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="turbo_mode" class="sr-only peer" onchange="toggleTurbo()">
+                                    <div class="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-yellow-500"></div>
+                                </label>
+                            </div>
+                            <div id="turbo-options" class="hidden space-y-2">
+                                <label class="block text-xs text-gray-500 mb-1">Requêtes parallèles</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="range" id="parallel_requests" min="1" max="10" value="3" step="1"
+                                        class="flex-1 accent-yellow-500"
+                                        oninput="document.getElementById('parallel_label').textContent = this.value">
+                                    <span id="parallel_label" class="text-xs text-yellow-400 w-6 text-right">3</span>
+                                </div>
+                                <div class="flex justify-between text-xs text-gray-600">
+                                    <span>1 prudent</span><span>3 normal</span><span>5 rapide</span><span>10 agressif</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Fenêtre temporelle -->
                         <div class="pt-2 border-t border-gray-700">
                             <label class="block text-xs text-gray-400 mb-2 flex items-center gap-1">
@@ -1266,6 +1293,13 @@ function remplir(cfg) {
     document.getElementById('maturite_min').value = cfg.maturite_min || 'reflexion';
     // Mode de recherche
     document.getElementById('mode_recherche').value = cfg.mode_recherche || 'complet';
+    // Mode turbo
+    const turbo = cfg.turbo_mode || false;
+    document.getElementById('turbo_mode').checked = turbo;
+    document.getElementById('parallel_requests').value = cfg.parallel_requests || 3;
+    document.getElementById('parallel_label').textContent = cfg.parallel_requests || 3;
+    if (turbo) document.getElementById('turbo-options').classList.remove('hidden');
+    else document.getElementById('turbo-options').classList.add('hidden');
 }
 
 function lireFormulaire() {
@@ -1299,6 +1333,8 @@ function lireFormulaire() {
         },
         maturite_min: document.getElementById('maturite_min').value,
         mode_recherche: document.getElementById('mode_recherche').value,
+        turbo_mode: document.getElementById('turbo_mode').checked,
+        parallel_requests: parseInt(document.getElementById('parallel_requests').value) || 3,
     };
 }
 
@@ -1669,6 +1705,12 @@ function showToast(msg,type) {
     const t=document.getElementById('toast');
     t.textContent=msg;t.className='toast '+type;t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ── Mode turbo ────────────────────────────────────────────────────────────────
+function toggleTurbo() {
+    const on = document.getElementById('turbo_mode').checked;
+    document.getElementById('turbo-options').classList.toggle('hidden', !on);
 }
 
 // ── Fenêtre temporelle ────────────────────────────────────────────────────────
