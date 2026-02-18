@@ -18,6 +18,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import urllib3
+import trafilatura
 from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -963,28 +964,43 @@ class ScraperCore:
             _log(f"         ↳ HTTP {r.status_code} | {len(r.content):,} octets | {elapsed_ms} ms")
 
             if url.lower().endswith(".pdf") or "pdf" in url.lower():
+                import io
+                nb_pages = 0
+                texte = ""
+                # Tentative 1 : pdfplumber
                 try:
                     import pdfplumber
-                    import io
                     with pdfplumber.open(io.BytesIO(r.content)) as pdf:
                         nb_pages = len(pdf.pages)
                         textes = [p.extract_text() or "" for p in pdf.pages[:10]]
                     texte = "\n".join(textes).strip()
-                    nb_chars = len(texte)
-                    _log(
-                        f"         ↳ {nb_pages} page(s) | {nb_chars:,} caractères extraits"
-                    )
-                    if nb_chars < 100:
-                        _log(
-                            f"         ⚠️ PDF probablement scanné (image) — texte non lisible",
-                            "warning",
-                        )
-                    return texte or None, nb_pages, nb_chars
                 except Exception as exc:
                     _log(f"         ⚠️ pdfplumber échoué : {exc}", "warning")
-                    return None, 0, 0
+                # Tentative 2 : pymupdf si pdfplumber insuffisant
+                if len(texte) < 100:
+                    try:
+                        import fitz
+                        doc_fitz = fitz.open(stream=r.content, filetype="pdf")
+                        nb_pages = nb_pages or doc_fitz.page_count
+                        texte_fitz = "\n".join(
+                            doc_fitz[i].get_text() for i in range(min(10, doc_fitz.page_count))
+                        ).strip()
+                        if len(texte_fitz) > len(texte):
+                            texte = texte_fitz
+                            _log(f"         ↳ pymupdf fallback : {len(texte):,} car.")
+                    except Exception as exc2:
+                        _log(f"         ⚠️ pymupdf échoué : {exc2}", "warning")
+                nb_chars = len(texte)
+                _log(f"         ↳ {nb_pages} page(s) | {nb_chars:,} caractères extraits")
+                if nb_chars < 100:
+                    _log(
+                        f"         ⚠️ PDF potentiellement scanné (image) — {url}",
+                        "warning",
+                    )
+                    return None, nb_pages, nb_chars
+                return texte, nb_pages, nb_chars
             else:
-                texte = self._extraire_texte_html(r.text)
+                texte = self._extraire_texte_html(r.text, url=url)
                 nb_chars = len(texte)
                 _log(f"         ↳ HTML | {nb_chars:,} caractères extraits")
                 return texte or None, 1, nb_chars
@@ -1058,26 +1074,51 @@ class ScraperCore:
             r.raise_for_status()
 
             if url.lower().endswith(".pdf") or "pdf" in url.lower():
+                import io
+                texte = ""
+                # Tentative 1 : pdfplumber
                 try:
                     import pdfplumber
-                    import io
                     with pdfplumber.open(io.BytesIO(r.content)) as pdf:
                         textes = [p.extract_text() or "" for p in pdf.pages[:10]]
-                    return "\n".join(textes).strip() or None
+                    texte = "\n".join(textes).strip()
                 except Exception as exc:
                     log_fn(f"pdfplumber échoué pour {url} : {exc}", "warning")
+                # Tentative 2 : pymupdf si pdfplumber insuffisant
+                if len(texte) < 100:
+                    try:
+                        import fitz
+                        doc_fitz = fitz.open(stream=r.content, filetype="pdf")
+                        texte_fitz = "\n".join(
+                            doc_fitz[i].get_text() for i in range(min(10, doc_fitz.page_count))
+                        ).strip()
+                        if len(texte_fitz) > len(texte):
+                            texte = texte_fitz
+                    except Exception as exc2:
+                        log_fn(f"pymupdf échoué pour {url} : {exc2}", "warning")
+                if len(texte) < 100:
+                    log_fn(f"⚠️ PDF potentiellement scanné (image) — {url}", "warning")
                     return None
+                return texte
             else:
-                # Pour HTML ou autres, retourne le texte brut
-                soup = BeautifulSoup(r.text, "html.parser")
-                return self._extraire_texte_html(r.text)
+                return self._extraire_texte_html(r.text, url=url)
 
         except requests.RequestException as exc:
             log_fn(f"Erreur téléchargement {url} : {exc}", "warning")
             return None
 
-    def _extraire_texte_html(self, html: str) -> str:
-        """Extrait le texte utile d'une page HTML."""
+    def _extraire_texte_html(self, html: str, url: str = "") -> str:
+        """Extrait le texte utile d'une page HTML via Trafilatura (fallback BS4)."""
+        texte = trafilatura.extract(
+            html,
+            include_comments=False,
+            include_tables=True,
+            no_fallback=False,
+            url=url or None,
+        )
+        if texte and len(texte) > 100:
+            return texte
+        # Fallback BeautifulSoup
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
