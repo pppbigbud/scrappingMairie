@@ -1062,8 +1062,9 @@ def run_analysis(config):
             for i, target in enumerate(targets, 1):
                 status_queue.put({'status': 'running', 'message': f'[{i}/{total}] 🔍 Scraping {target["commune"]} ({target["url"]})...', 'timestamp': datetime.now().isoformat()})
 
-                def cb(msg):
-                    status_queue.put({'status': 'running', 'message': f'  ↳ {msg}', 'timestamp': datetime.now().isoformat()})
+                def cb(msg, level="info"):
+                    status_map = {"warning": "warning", "error": "error", "info": "running", "success": "running"}
+                    status_queue.put({'status': status_map.get(level, 'running'), 'message': f'  ↳ {msg}', 'timestamp': datetime.now().isoformat()})
 
                 try:
                     docs = scraper.scraper_site(target['url'], target['commune'], target['dept'], status_callback=cb)
