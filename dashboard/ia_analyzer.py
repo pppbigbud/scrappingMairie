@@ -163,6 +163,58 @@ JSON:"""
             'ia_justification': str(e)
         }
 
+def analyze_with_groq(document_text: str, api_key: str, model: str = "llama3-8b-8192") -> dict:
+    """Analyse via API Groq (cloud, rapide, gratuit jusqu'à 30 req/min)"""
+    max_length = 3000
+    if len(document_text) > max_length:
+        document_text = document_text[:max_length] + "\n[...tronqué...]"
+
+    prompt = f"""Analyse ce document administratif français. Réponds UNIQUEMENT en JSON valide.
+
+Document: {document_text}
+
+JSON (ia_pertinent=true si le document parle d'un projet concret d'énergie renouvelable, solaire, biomasse, réseau de chaleur, rénovation énergétique):
+{{"ia_pertinent": false, "ia_score": 0, "ia_resume": "résumé en 1 phrase", "ia_justification": "raison courte"}}
+
+JSON:"""
+
+    try:
+        response = requests.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            },
+            json={
+                'model': model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': 0.1,
+                'max_tokens': 200,
+            },
+            timeout=30
+        )
+        if response.status_code == 200:
+            content = response.json()['choices'][0]['message']['content'].strip()
+            if '```json' in content:
+                content = content.split('```json')[1].split('```')[0].strip()
+            elif '```' in content:
+                content = content.split('```')[1].split('```')[0].strip()
+            try:
+                analysis = json.loads(content)
+                return {
+                    'ia_pertinent': bool(analysis.get('ia_pertinent', False)),
+                    'ia_score': int(analysis.get('ia_score', 0)),
+                    'ia_resume': str(analysis.get('ia_resume', '')),
+                    'ia_justification': str(analysis.get('ia_justification', ''))
+                }
+            except json.JSONDecodeError:
+                return {'ia_pertinent': False, 'ia_score': 0, 'ia_resume': 'Erreur parsing', 'ia_justification': content[:100]}
+        else:
+            return {'ia_pertinent': False, 'ia_score': 0, 'ia_resume': f'Erreur Groq {response.status_code}', 'ia_justification': response.text[:100]}
+    except Exception as e:
+        return {'ia_pertinent': False, 'ia_score': 0, 'ia_resume': 'Erreur API Groq', 'ia_justification': str(e)}
+
+
 def check_ollama_available() -> bool:
     """Check if Ollama is running and available"""
     try:

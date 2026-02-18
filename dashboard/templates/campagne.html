@@ -288,6 +288,75 @@
                     </div>
                 </div>
 
+                <!-- Analyse IA -->
+                <div class="card">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="cpu" class="w-4 h-4 text-red-500"></i>
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Analyse IA</span>
+                        <button class="help-btn" onclick="aide('ia_mode')">?</button>
+                    </div>
+                    <div class="space-y-3">
+                        <!-- Mode -->
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-2">Mode d'analyse</label>
+                            <div class="flex flex-col gap-2" id="ia-mode-btns">
+                                <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg border border-gray-700 hover:border-red-600 transition-colors" id="ia-mode-local-lbl">
+                                    <input type="radio" name="ia_mode" value="local" class="accent-red-500" onchange="onIaModeChange('local')">
+                                    <div>
+                                        <div class="text-xs font-semibold text-gray-200">🤖 IA locale (TinyLlama)</div>
+                                        <div class="text-xs text-gray-500">Ollama sur votre machine — privé, hors-ligne</div>
+                                    </div>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg border border-gray-700 hover:border-red-600 transition-colors" id="ia-mode-groq-lbl">
+                                    <input type="radio" name="ia_mode" value="groq" class="accent-red-500" onchange="onIaModeChange('groq')">
+                                    <div>
+                                        <div class="text-xs font-semibold text-gray-200">☁️ API Groq (cloud)</div>
+                                        <div class="text-xs text-gray-500">Rapide, gratuit jusqu'à 30 req/min</div>
+                                    </div>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer p-2 rounded-lg border border-gray-700 hover:border-red-600 transition-colors" id="ia-mode-manuel-lbl">
+                                    <input type="radio" name="ia_mode" value="manuel" class="accent-red-500" onchange="onIaModeChange('manuel')">
+                                    <div>
+                                        <div class="text-xs font-semibold text-gray-200">✋ Validation manuelle</div>
+                                        <div class="text-xs text-gray-500">Vous validez chaque document vous-même</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        <!-- Options Groq (cachées par défaut) -->
+                        <div id="ia-groq-options" class="hidden space-y-2 pt-2 border-t border-gray-700">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Clé API Groq</label>
+                                <input type="password" id="groq-api-key" class="form-input text-xs" placeholder="gsk_...">
+                                <p class="text-xs text-gray-600 mt-1">Gratuit sur <a href="https://console.groq.com" target="_blank" class="text-red-400 hover:underline">console.groq.com</a></p>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Modèle Groq</label>
+                                <select id="groq-model" class="form-input text-xs">
+                                    <option value="llama3-8b-8192">Llama 3 8B (rapide)</option>
+                                    <option value="llama3-70b-8192">Llama 3 70B (précis)</option>
+                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                                    <option value="gemma2-9b-it">Gemma 2 9B</option>
+                                </select>
+                            </div>
+                        </div>
+                        <!-- Options Local (cachées si autre mode) -->
+                        <div id="ia-local-options" class="space-y-2 pt-2 border-t border-gray-700">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Modèle local</label>
+                                <select id="local-model" class="form-input text-xs">
+                                    <option value="tinyllama">TinyLlama 1B ✅ recommandé M1</option>
+                                    <option value="mistral">Mistral 7B (lourd)</option>
+                                    <option value="llama2">Llama2 7B (lourd)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onclick="sauvegarderConfigIA()" class="btn-secondary w-full justify-center text-xs py-1.5">
+                            <i data-lucide="save" class="w-3 h-3"></i>Sauvegarder config IA
+                        </button>
+                    </div>
+                </div>
+
                 <button onclick="resetConfig()" class="btn-secondary w-full justify-center text-sm">
                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i>Réinitialiser par défaut
                 </button>
@@ -476,36 +545,66 @@
 
     <!-- ═══════════════════════════════════════════════════════ TAB DOCUMENTS -->
     <div id="pane-documents" class="tab-pane hidden">
-        <div class="card mb-4">
-            <div class="flex flex-wrap gap-3 items-center">
-                <input type="text" id="doc-search" placeholder="Rechercher..." class="form-input flex-1 min-w-48 py-1.5 text-sm">
-                <select id="doc-score-filter" class="form-input w-44 py-1.5 text-sm">
-                    <option value="">Tous les scores</option>
-                    <option value="high">Élevé (7-10)</option>
-                    <option value="medium">Moyen (4-6)</option>
-                    <option value="low">Faible (0-3)</option>
-                </select>
-                <select id="doc-pertinence-filter" class="form-input w-44 py-1.5 text-sm">
-                    <option value="">Tous</option>
-                    <option value="true">Pertinents</option>
-                    <option value="false">Non pertinents</option>
-                </select>
-                <button onclick="chargerDocuments()" class="btn-secondary text-sm py-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Actualiser</button>
-                <button onclick="exporterResultats()" class="btn-secondary text-sm py-1.5"><i data-lucide="download" class="w-4 h-4"></i>Exporter</button>
-                <button onclick="purgerDocuments()" class="text-sm py-1.5 px-3 bg-red-900/40 text-red-400 border border-red-800 rounded-lg hover:bg-red-900/60 flex items-center gap-1">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i>Purger
-                </button>
+        <!-- Sous-onglets Documents -->
+        <div class="flex gap-1 mb-4 border-b border-gray-700">
+            <button class="tab-btn active" id="subtab-docs" onclick="showSubTab('docs')">📄 Documents analysés</button>
+            <button class="tab-btn" id="subtab-validation" onclick="showSubTab('validation')">
+                ✋ Validation manuelle
+                <span id="badge-pending" class="ml-1 bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5 hidden">0</span>
+            </button>
+        </div>
+
+        <!-- Sous-pane : Documents analysés -->
+        <div id="subpane-docs">
+            <div class="card mb-4">
+                <div class="flex flex-wrap gap-3 items-center">
+                    <input type="text" id="doc-search" placeholder="Rechercher..." class="form-input flex-1 min-w-48 py-1.5 text-sm">
+                    <select id="doc-score-filter" class="form-input w-44 py-1.5 text-sm">
+                        <option value="">Tous les scores</option>
+                        <option value="high">Élevé (7-10)</option>
+                        <option value="medium">Moyen (4-6)</option>
+                        <option value="low">Faible (0-3)</option>
+                    </select>
+                    <select id="doc-pertinence-filter" class="form-input w-44 py-1.5 text-sm">
+                        <option value="">Tous</option>
+                        <option value="true">Pertinents</option>
+                        <option value="false">Non pertinents</option>
+                    </select>
+                    <button onclick="chargerDocuments()" class="btn-secondary text-sm py-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Actualiser</button>
+                    <button onclick="exporterResultats()" class="btn-secondary text-sm py-1.5"><i data-lucide="download" class="w-4 h-4"></i>Exporter</button>
+                    <button onclick="purgerDocuments()" class="text-sm py-1.5 px-3 bg-red-900/40 text-red-400 border border-red-800 rounded-lg hover:bg-red-900/60 flex items-center gap-1">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>Purger
+                    </button>
+                </div>
             </div>
+            <div id="docs-stats" class="grid grid-cols-4 gap-3 mb-4 hidden">
+                <div class="stat-card"><div class="text-xs text-gray-500">Total</div><div class="text-xl font-bold text-white" id="d-total">0</div></div>
+                <div class="stat-card"><div class="text-xs text-gray-500">Pertinents</div><div class="text-xl font-bold text-green-400" id="d-pertinents">0</div></div>
+                <div class="stat-card"><div class="text-xs text-gray-500">Score moyen</div><div class="text-xl font-bold text-yellow-400" id="d-score">0.0</div></div>
+                <div class="stat-card"><div class="text-xs text-gray-500">Taux</div><div class="text-xl font-bold text-red-400" id="d-taux">0%</div></div>
+            </div>
+            <div id="docs-loading" class="text-center py-12 text-gray-500"><i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin mb-2"></i>Chargement...</div>
+            <div id="docs-empty" class="text-center py-12 text-gray-600 hidden"><i data-lucide="file-x" class="w-12 h-12 mx-auto mb-3"></i><p>Aucun document. Lancez une recherche d'abord.</p></div>
+            <div id="docs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
         </div>
-        <div id="docs-stats" class="grid grid-cols-4 gap-3 mb-4 hidden">
-            <div class="stat-card"><div class="text-xs text-gray-500">Total</div><div class="text-xl font-bold text-white" id="d-total">0</div></div>
-            <div class="stat-card"><div class="text-xs text-gray-500">Pertinents</div><div class="text-xl font-bold text-green-400" id="d-pertinents">0</div></div>
-            <div class="stat-card"><div class="text-xs text-gray-500">Score moyen</div><div class="text-xl font-bold text-yellow-400" id="d-score">0.0</div></div>
-            <div class="stat-card"><div class="text-xs text-gray-500">Taux</div><div class="text-xl font-bold text-red-400" id="d-taux">0%</div></div>
+
+        <!-- Sous-pane : Validation manuelle -->
+        <div id="subpane-validation" class="hidden">
+            <div class="card mb-4 flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-300">Documents détectés par mots-clés, <strong class="text-white">en attente de votre validation</strong>.</p>
+                    <p class="text-xs text-gray-500 mt-1">Lisez l'extrait et décidez si le document est pertinent pour votre campagne.</p>
+                </div>
+                <button onclick="chargerPending()" class="btn-secondary text-sm py-1.5 shrink-0"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Actualiser</button>
+            </div>
+            <div id="pending-loading" class="text-center py-12 text-gray-500"><i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin mb-2"></i>Chargement...</div>
+            <div id="pending-empty" class="text-center py-12 text-gray-600 hidden">
+                <i data-lucide="check-circle" class="w-12 h-12 mx-auto mb-3 text-green-600"></i>
+                <p>Aucun document en attente de validation.</p>
+                <p class="text-xs mt-1">Lancez une recherche en mode "Validation manuelle" pour en voir apparaître ici.</p>
+            </div>
+            <div id="pending-list" class="space-y-4 hidden"></div>
         </div>
-        <div id="docs-loading" class="text-center py-12 text-gray-500"><i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin mb-2"></i>Chargement...</div>
-        <div id="docs-empty" class="text-center py-12 text-gray-600 hidden"><i data-lucide="file-x" class="w-12 h-12 mx-auto mb-3"></i><p>Aucun document. Lancez une recherche d'abord.</p></div>
-        <div id="docs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
     </div>
 
     </div><!-- fin .p-6 -->
@@ -728,6 +827,25 @@ const AIDE = {
         <p class="mt-2 text-xs">Vous pouvez ensuite désélectionner individuellement certains départements sur la carte.</p>
         <p class="mt-2 text-xs text-gray-400">Les régions disponibles couvrent la France métropolitaine. Les DOM-TOM ne sont pas encore supportés.</p>`
     },
+    ia_mode: {
+        titre: '🤖 Mode d\'analyse IA',
+        contenu: `<p>Choisissez comment les documents détectés par mots-clés seront analysés pour confirmer leur pertinence.</p>
+        <div class="mt-3 space-y-3">
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-gray-200">🤖 IA locale (TinyLlama)</strong><br>
+                <span class="text-xs">Analyse sur votre machine via Ollama. Privé, fonctionne hors-ligne. Recommandé : TinyLlama 1B (léger, adapté MacBook Air M1).</span>
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-gray-200">☁️ API Groq</strong><br>
+                <span class="text-xs">Analyse dans le cloud via l'API Groq. Très rapide, gratuit jusqu'à 30 req/min. Nécessite une clé API (gratuite sur <strong>console.groq.com</strong>). Modèle recommandé : Llama 3 8B.</span>
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-gray-200">✋ Validation manuelle</strong><br>
+                <span class="text-xs">Aucune IA utilisée. Les documents détectés par mots-clés apparaissent dans l'onglet <strong>Documents → Validation manuelle</strong> pour que vous décidiez vous-même de leur pertinence.</span>
+            </div>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">💡 La config IA est sauvegardée indépendamment de la campagne et persiste entre les sessions.</p>`
+    },
 };
 
 // ── Modal aide ────────────────────────────────────────────────────────────────
@@ -752,13 +870,15 @@ let currentMode = 'single';
 let allDocs = [];
 let deptsSelectionnes = new Set();
 let carteInitialisee = false;
+let iaCfg = { mode: 'local', model: 'tinyllama', groq_api_key: '', groq_model: 'llama3-8b-8192' };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     lucide.createIcons();
-    await Promise.all([chargerConfig(), chargerPresets()]);
+    await Promise.all([chargerConfig(), chargerPresets(), chargerConfigIA()]);
     chargerDocuments();
     chargerHistorique();
+    chargerPending();
     bindDocFilters();
 });
 
@@ -769,7 +889,7 @@ function showTab(name) {
     document.getElementById('pane-' + name)?.classList.remove('hidden');
     document.getElementById('tab-' + name)?.classList.add('active');
     if (name === 'lancement') mettreAJourResume();
-    if (name === 'documents') chargerDocuments();
+    if (name === 'documents') { chargerDocuments(); chargerPending(); }
     if (name === 'resultats') chargerHistorique();
 }
 
@@ -1063,7 +1183,14 @@ async function lancerScraping() {
     }
     const payload = {
         crawling: crawlingConfig,
-        ai: { search_depth: cfg.parametres_scraping.profondeur, score_threshold: cfg.seuil_ia, api_provider:'ollama', model:'tinyllama' },
+        ai: {
+            mode: iaCfg.mode,
+            model: iaCfg.model,
+            groq_api_key: iaCfg.groq_api_key,
+            groq_model: iaCfg.groq_model,
+            search_depth: cfg.parametres_scraping.profondeur,
+            score_threshold: cfg.seuil_ia,
+        },
         filtering: { energy_keywords: [...cfg.mots_cles.prioritaires,...cfg.mots_cles.secondaires,...cfg.mots_cles.budget] }
     };
     setBtnState(true);
@@ -1237,6 +1364,145 @@ function showToast(msg,type) {
     const t=document.getElementById('toast');
     t.textContent=msg;t.className='toast '+type;t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ── Config IA ─────────────────────────────────────────────────────────────────
+async function chargerConfigIA() {
+    try {
+        const r = await fetch('/api/config/ia');
+        if (r.ok) {
+            iaCfg = await r.json();
+            // Appliquer dans l'UI
+            const radio = document.querySelector(`input[name="ia_mode"][value="${iaCfg.mode}"]`);
+            if (radio) { radio.checked = true; onIaModeChange(iaCfg.mode, false); }
+            if (iaCfg.groq_api_key) document.getElementById('groq-api-key').value = iaCfg.groq_api_key;
+            if (iaCfg.groq_model) document.getElementById('groq-model').value = iaCfg.groq_model;
+            if (iaCfg.model) document.getElementById('local-model').value = iaCfg.model;
+        }
+    } catch(e) {}
+}
+
+function onIaModeChange(mode, save=true) {
+    iaCfg.mode = mode;
+    document.getElementById('ia-groq-options').classList.toggle('hidden', mode !== 'groq');
+    document.getElementById('ia-local-options').classList.toggle('hidden', mode !== 'local');
+    // Highlight du label actif
+    ['local','groq','manuel'].forEach(m => {
+        const lbl = document.getElementById(`ia-mode-${m}-lbl`);
+        if (lbl) lbl.classList.toggle('border-red-600', m === mode);
+    });
+    if (save) sauvegarderConfigIA();
+}
+
+async function sauvegarderConfigIA() {
+    iaCfg = {
+        mode: document.querySelector('input[name="ia_mode"]:checked')?.value || 'local',
+        model: document.getElementById('local-model').value,
+        groq_api_key: document.getElementById('groq-api-key').value,
+        groq_model: document.getElementById('groq-model').value,
+    };
+    try {
+        await fetch('/api/config/ia', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(iaCfg)});
+        showToast('Config IA sauvegardée','success');
+    } catch(e) { showToast('Erreur sauvegarde config IA','error'); }
+}
+
+// ── Sous-onglets Documents ────────────────────────────────────────────────────
+function showSubTab(name) {
+    ['docs','validation'].forEach(n => {
+        document.getElementById('subpane-'+n)?.classList.toggle('hidden', n !== name);
+        const btn = document.getElementById('subtab-'+n);
+        if (btn) { btn.classList.toggle('active', n === name); }
+    });
+    if (name === 'validation') chargerPending();
+}
+
+// ── Validation manuelle ───────────────────────────────────────────────────────
+async function chargerPending() {
+    const loading = document.getElementById('pending-loading');
+    const empty   = document.getElementById('pending-empty');
+    const list    = document.getElementById('pending-list');
+    const badge   = document.getElementById('badge-pending');
+    if (!loading) return;
+    loading.classList.remove('hidden'); empty.classList.add('hidden'); list.classList.add('hidden');
+    try {
+        const r = await fetch('/api/documents/pending');
+        const docs = r.ok ? await r.json() : [];
+        loading.classList.add('hidden');
+        if (!docs.length) {
+            empty.classList.remove('hidden');
+            badge.classList.add('hidden');
+            return;
+        }
+        badge.textContent = docs.length;
+        badge.classList.remove('hidden');
+        list.classList.remove('hidden');
+        list.innerHTML = docs.map(d => `
+            <div class="card" id="pending-card-${d.id}">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <span class="text-xs font-bold text-red-400">${d.commune || '—'} (${d.departement || '—'})</span>
+                            <span class="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">${d.document_type || 'html'}</span>
+                            <span class="text-xs text-gray-500">Score mots-clés : <strong class="text-yellow-400">${d.score}</strong></span>
+                        </div>
+                        <p class="text-sm text-white font-medium truncate">${d.title}</p>
+                        ${d.source_url ? `<a href="${d.source_url}" target="_blank" class="text-xs text-blue-400 hover:underline truncate block">${d.source_url}</a>` : ''}
+                    </div>
+                </div>
+                ${d.mots_trouves?.length ? `<div class="flex flex-wrap gap-1 mb-3">${d.mots_trouves.map(m=>`<span class="text-xs bg-red-900/40 text-red-300 px-1.5 py-0.5 rounded">${m}</span>`).join('')}</div>` : ''}
+                <div class="bg-gray-900 rounded p-3 mb-3 text-xs text-gray-400 font-mono leading-relaxed max-h-32 overflow-y-auto">${(d.texte_extrait||'Aucun extrait disponible').replace(/</g,'&lt;')}</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <label class="text-xs text-gray-400">Note :</label>
+                    <input type="text" id="note-${d.id}" placeholder="Optionnel..." class="form-input flex-1 text-xs py-1">
+                    <label class="text-xs text-gray-400">Score :</label>
+                    <input type="number" id="score-${d.id}" value="8" min="1" max="10" class="form-input w-16 text-xs py-1">
+                    <button onclick="validerDoc('${d.file}',${d.index},'${d.id}',true)" class="btn-primary text-xs py-1.5 px-3">
+                        <i data-lucide="check" class="w-3 h-3"></i>Pertinent
+                    </button>
+                    <button onclick="validerDoc('${d.file}',${d.index},'${d.id}',false)" class="btn-secondary text-xs py-1.5 px-3 border-red-800 text-red-400">
+                        <i data-lucide="x" class="w-3 h-3"></i>Non pertinent
+                    </button>
+                </div>
+            </div>`).join('');
+        lucide.createIcons();
+    } catch(e) {
+        loading.classList.add('hidden');
+        empty.classList.remove('hidden');
+    }
+}
+
+async function validerDoc(file, index, cardId, decision) {
+    const note  = document.getElementById('note-'+cardId)?.value || '';
+    const score = parseInt(document.getElementById('score-'+cardId)?.value || '8');
+    try {
+        const r = await fetch('/api/documents/validate', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({file, index, decision, score, note})
+        });
+        if (r.ok) {
+            const card = document.getElementById('pending-card-'+cardId);
+            if (card) {
+                card.style.opacity = '0.4';
+                card.style.pointerEvents = 'none';
+                const msg = decision
+                    ? '<div class="text-xs text-green-400 font-semibold mt-2">✅ Marqué comme pertinent</div>'
+                    : '<div class="text-xs text-gray-500 font-semibold mt-2">❌ Marqué comme non pertinent</div>';
+                card.insertAdjacentHTML('beforeend', msg);
+            }
+            showToast(decision ? '✅ Document validé comme pertinent' : '❌ Document rejeté', decision ? 'success' : 'error');
+            // Mettre à jour le badge
+            const badge = document.getElementById('badge-pending');
+            if (badge) {
+                const n = parseInt(badge.textContent||'0') - 1;
+                badge.textContent = n;
+                if (n <= 0) badge.classList.add('hidden');
+            }
+        } else {
+            showToast('Erreur lors de la validation','error');
+        }
+    } catch(e) { showToast('Erreur réseau','error'); }
 }
 </script>
 </body>

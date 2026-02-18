@@ -39,7 +39,7 @@ from url_finder import find_city_url
 from site_structure_cache import get_priority_sections, update_site_structure
 from regional_patterns import get_all_patterns
 from ocr_processor import extract_pdf_with_fallback
-from ia_analyzer import analyze_document_with_ollama, check_ollama_available
+from ia_analyzer import analyze_document_with_ollama, check_ollama_available, analyze_with_groq
 
 # Load environment variables from .env file
 def load_env():
@@ -1037,34 +1037,72 @@ def run_analysis(config):
                 except Exception as exc:
                     status_queue.put({'status': 'warning', 'message': f'  ⚠️ Erreur sur {target["commune"]} : {exc}', 'timestamp': datetime.now().isoformat()})
 
-            # ── Analyse IA (Ollama) sur les docs pertinents ──────────────────
+            # ── Analyse IA — dispatcher multi-mode ───────────────────────────
             pertinents_scraping = [d for d in all_results if d.get('pertinent')]
-            seuil_ia = config.get('ai', {}).get('score_threshold', 7)
-            model_ia = config.get('ai', {}).get('model', 'tinyllama')
+            ai_cfg = config.get('ai', {})
+            ia_mode = ai_cfg.get('mode', 'local')          # 'local' | 'groq' | 'manuel'
+            model_ia = ai_cfg.get('model', 'tinyllama')
+            groq_key = ai_cfg.get('groq_api_key', '')
+            groq_model = ai_cfg.get('groq_model', 'llama3-8b-8192')
 
-            if pertinents_scraping and check_ollama_available():
-                status_queue.put({'status': 'running', 'message': f'🤖 Analyse IA de {len(pertinents_scraping)} document(s) pertinent(s) avec {model_ia}...', 'timestamp': datetime.now().isoformat()})
-                for idx, doc in enumerate(pertinents_scraping, 1):
-                    texte = doc.get('texte', '')
-                    if not texte or len(texte) < 100:
-                        continue
-                    try:
-                        status_queue.put({'status': 'running', 'message': f'  🤖 [{idx}/{len(pertinents_scraping)}] IA analyse : {doc.get("commune","")} — {doc.get("nom_fichier","")[:40]}', 'timestamp': datetime.now().isoformat()})
-                        analyse_ia = analyze_document_with_ollama(texte, model=model_ia)
-                        doc['ia_pertinent'] = analyse_ia.get('ia_pertinent', False)
-                        doc['ia_score'] = analyse_ia.get('ia_score', 0)
-                        doc['ia_resume'] = analyse_ia.get('ia_resume', '')
-                        doc['ia_justification'] = analyse_ia.get('ia_justification', '')
-                    except Exception as e_ia:
-                        status_queue.put({'status': 'warning', 'message': f'  ⚠️ IA échouée pour {doc.get("nom_fichier","")}: {e_ia}', 'timestamp': datetime.now().isoformat()})
-            elif pertinents_scraping:
-                status_queue.put({'status': 'warning', 'message': '⚠️ Ollama non disponible — analyse IA ignorée. Résultats basés sur mots-clés uniquement.', 'timestamp': datetime.now().isoformat()})
-                # Fallback : utiliser le score mots-clés comme ia_score (normalisé sur 10)
+            if not pertinents_scraping:
+                pass  # rien à analyser
+
+            elif ia_mode == 'manuel':
+                # Marquer les docs comme "en attente de validation manuelle"
                 for doc in pertinents_scraping:
-                    raw = doc.get('score', 0)
-                    doc['ia_score'] = min(10, raw * 2)
-                    doc['ia_pertinent'] = raw >= scraper.seuil_confiance
-                    doc['ia_resume'] = f"Score mots-clés : {raw} — mots trouvés : {', '.join(doc.get('mots_trouves', []))}"
+                    doc['ia_pertinent'] = False
+                    doc['ia_score'] = 0
+                    doc['ia_resume'] = ''
+                    doc['ia_justification'] = ''
+                    doc['validation_status'] = 'pending'
+                status_queue.put({'status': 'running', 'message': f'📋 {len(pertinents_scraping)} document(s) mis en file de validation manuelle', 'timestamp': datetime.now().isoformat()})
+
+            elif ia_mode == 'groq':
+                if not groq_key:
+                    status_queue.put({'status': 'warning', 'message': '⚠️ Clé API Groq manquante — passage en validation manuelle', 'timestamp': datetime.now().isoformat()})
+                    for doc in pertinents_scraping:
+                        doc['validation_status'] = 'pending'
+                else:
+                    status_queue.put({'status': 'running', 'message': f'☁️ Analyse Groq ({groq_model}) de {len(pertinents_scraping)} document(s)...', 'timestamp': datetime.now().isoformat()})
+                    for idx, doc in enumerate(pertinents_scraping, 1):
+                        texte = doc.get('texte', '')
+                        if not texte or len(texte) < 100:
+                            continue
+                        try:
+                            status_queue.put({'status': 'running', 'message': f'  ☁️ [{idx}/{len(pertinents_scraping)}] Groq : {doc.get("commune","")} — {doc.get("nom_fichier","")[:40]}', 'timestamp': datetime.now().isoformat()})
+                            res = analyze_with_groq(texte, api_key=groq_key, model=groq_model)
+                            doc['ia_pertinent'] = res.get('ia_pertinent', False)
+                            doc['ia_score'] = res.get('ia_score', 0)
+                            doc['ia_resume'] = res.get('ia_resume', '')
+                            doc['ia_justification'] = res.get('ia_justification', '')
+                            doc['validation_status'] = 'validated_auto'
+                        except Exception as e_groq:
+                            status_queue.put({'status': 'warning', 'message': f'  ⚠️ Groq échoué : {e_groq}', 'timestamp': datetime.now().isoformat()})
+                            doc['validation_status'] = 'pending'
+
+            else:  # mode 'local' (Ollama)
+                if check_ollama_available():
+                    status_queue.put({'status': 'running', 'message': f'🤖 Analyse locale ({model_ia}) de {len(pertinents_scraping)} document(s)...', 'timestamp': datetime.now().isoformat()})
+                    for idx, doc in enumerate(pertinents_scraping, 1):
+                        texte = doc.get('texte', '')
+                        if not texte or len(texte) < 100:
+                            continue
+                        try:
+                            status_queue.put({'status': 'running', 'message': f'  🤖 [{idx}/{len(pertinents_scraping)}] IA : {doc.get("commune","")} — {doc.get("nom_fichier","")[:40]}', 'timestamp': datetime.now().isoformat()})
+                            res = analyze_document_with_ollama(texte, model=model_ia)
+                            doc['ia_pertinent'] = res.get('ia_pertinent', False)
+                            doc['ia_score'] = res.get('ia_score', 0)
+                            doc['ia_resume'] = res.get('ia_resume', '')
+                            doc['ia_justification'] = res.get('ia_justification', '')
+                            doc['validation_status'] = 'validated_auto'
+                        except Exception as e_ia:
+                            status_queue.put({'status': 'warning', 'message': f'  ⚠️ IA locale échouée : {e_ia}', 'timestamp': datetime.now().isoformat()})
+                            doc['validation_status'] = 'pending'
+                else:
+                    status_queue.put({'status': 'warning', 'message': '⚠️ Ollama non disponible — docs mis en validation manuelle', 'timestamp': datetime.now().isoformat()})
+                    for doc in pertinents_scraping:
+                        doc['validation_status'] = 'pending'
 
             # Sauvegarde globale (tous les docs, IA renseignée sur les pertinents)
             if all_results:
@@ -2343,6 +2381,100 @@ def get_communes_auvergne():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/documents/pending')
+def get_pending_documents():
+    """Documents pertinents (mots-clés) en attente de validation manuelle"""
+    resultats_dir = os.path.join(_PROJECT_ROOT, 'data', 'resultats')
+    pending = []
+    if not os.path.exists(resultats_dir):
+        return jsonify([])
+    result_files = sorted([f for f in os.listdir(resultats_dir) if f.endswith('.json')], reverse=True)
+    seen_urls = set()
+    for filename in result_files:
+        try:
+            with open(os.path.join(resultats_dir, filename), 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                continue
+            for i, doc in enumerate(data):
+                url = doc.get('source_url', '')
+                if url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                # Seulement les docs pertinents par mots-clés sans validation IA
+                if doc.get('pertinent') and doc.get('validation_status', '') == 'pending':
+                    pending.append({
+                        'id': f"{filename.replace('.json','')}_{i}",
+                        'file': filename,
+                        'index': i,
+                        'title': doc.get('nom_fichier', url or 'Sans titre'),
+                        'source_url': url,
+                        'site_url': doc.get('site_url', ''),
+                        'commune': doc.get('commune', ''),
+                        'departement': doc.get('departement', ''),
+                        'score': doc.get('score', 0),
+                        'mots_trouves': doc.get('mots_trouves', []),
+                        'texte_extrait': doc.get('texte', '')[:500],
+                        'date_detection': doc.get('date_detection', ''),
+                        'document_type': doc.get('document_type', ''),
+                    })
+        except Exception as e:
+            print(f"[pending] Erreur {filename}: {e}")
+    return jsonify(pending)
+
+
+@app.route('/api/documents/validate', methods=['POST'])
+def validate_document():
+    """Valider manuellement un document (pertinent ou non)"""
+    body = request.get_json() or {}
+    filename = body.get('file')
+    index = body.get('index')
+    decision = body.get('decision')  # True/False
+    score = int(body.get('score', 7))
+    note = body.get('note', '')
+
+    if filename is None or index is None or decision is None:
+        return jsonify({'error': 'Paramètres manquants (file, index, decision)'}), 400
+
+    filepath = os.path.join(_PROJECT_ROOT, 'data', 'resultats', filename)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Fichier introuvable'}), 404
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        doc = data[int(index)]
+        doc['ia_pertinent'] = bool(decision)
+        doc['ia_score'] = score if decision else 0
+        doc['ia_resume'] = note
+        doc['ia_justification'] = 'Validation manuelle'
+        doc['validation_status'] = 'validated_manual'
+        doc['validated_at'] = datetime.now().isoformat()
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return jsonify({'ok': True, 'commune': doc.get('commune', ''), 'ia_pertinent': doc['ia_pertinent']})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config/ia', methods=['GET', 'POST'])
+def config_ia():
+    """Lire/écrire la configuration du mode IA (mode, clé Groq, modèle)"""
+    ia_config_path = os.path.join(_PROJECT_ROOT, 'config', 'ia_config.json')
+    if request.method == 'GET':
+        if os.path.exists(ia_config_path):
+            with open(ia_config_path, 'r', encoding='utf-8') as f:
+                return jsonify(json.load(f))
+        return jsonify({'mode': 'local', 'model': 'tinyllama', 'groq_api_key': '', 'groq_model': 'llama3-8b-8192'})
+    else:
+        body = request.get_json() or {}
+        os.makedirs(os.path.dirname(ia_config_path), exist_ok=True)
+        with open(ia_config_path, 'w', encoding='utf-8') as f:
+            json.dump(body, f, ensure_ascii=False, indent=2)
+        return jsonify({'ok': True})
+
 
 @app.route('/api/documents/purge', methods=['DELETE'])
 def purge_documents():
