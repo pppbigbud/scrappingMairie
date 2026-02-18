@@ -52,16 +52,31 @@
         #carte-tooltip-d3{position:absolute;background:#111827;border:1px solid #374151;color:#f3f4f6;padding:.35rem .65rem;border-radius:.375rem;font-size:.75rem;pointer-events:none;z-index:100;white-space:nowrap}
         /* Filtres population */
         .pop-filter-btn.active-pop{border-color:#dc2626;color:#dc2626;background:#1f2937}
-        /* Lignes communes */
-        .commune-row{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border-radius:.375rem;background:#111827;border:1px solid #1f2937;transition:border-color .15s}
-        .commune-row:hover{border-color:#374151}
-        .commune-row.ok{border-left:3px solid #16a34a}
-        .commune-row.ko{border-left:3px solid #dc2626;opacity:.6}
-        .commune-row.checking{border-left:3px solid #ca8a04}
+        /* Tableau communes */
+        #communes-tbody tr{border-bottom:1px solid #1f2937;transition:background .1s}
+        #communes-tbody tr:hover{background:#1f2937}
+        #communes-tbody tr.status-confirmed td:first-child{border-left:3px solid #16a34a}
+        #communes-tbody tr.status-uncertain td:first-child{border-left:3px solid #ca8a04}
+        #communes-tbody tr.status-not_found td:first-child{border-left:3px solid #dc2626;opacity:.7}
+        #communes-tbody tr.status-manual td:first-child{border-left:3px solid #9333ea}
+        #communes-tbody tr.status-checking td:first-child{border-left:3px solid #3b82f6}
+        .status-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .5rem;border-radius:.25rem;font-size:.65rem;font-weight:600;white-space:nowrap}
+        .status-badge.confirmed{background:#14532d;color:#4ade80}
+        .status-badge.uncertain{background:#422006;color:#fbbf24}
+        .status-badge.not_found{background:#450a0a;color:#f87171}
+        .status-badge.manual{background:#3b0764;color:#c084fc}
+        .status-badge.checking{background:#1e3a5f;color:#60a5fa;animation:pulse 1s infinite}
+        .status-badge.unknown{background:#1f2937;color:#6b7280}
+        .source-badge{display:inline-block;padding:.1rem .4rem;border-radius:.2rem;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+        .source-badge.pattern{background:#1e3a5f;color:#93c5fd}
+        .source-badge.groq{background:#3b0764;color:#d8b4fe}
+        .source-badge.manual{background:#1c1917;color:#a8a29e}
+        .source-badge.none,.source-badge.groq_failed{background:#1f2937;color:#4b5563}
+        .url-edit-input{background:transparent;border:none;outline:none;color:#60a5fa;width:100%;font-size:.7rem;cursor:pointer}
+        .url-edit-input:focus{background:#111827;border:1px solid #3b82f6;border-radius:.25rem;padding:.1rem .3rem;color:#93c5fd}
+        /* Lignes communes (ancien style conservé pour compat) */
+        .commune-row{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border-radius:.375rem;background:#111827;border:1px solid #1f2937}
         .url-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#4b5563}
-        .url-status-dot.ok{background:#16a34a}
-        .url-status-dot.ko{background:#dc2626}
-        .url-status-dot.checking{background:#ca8a04;animation:pulse 1s infinite}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
     </style>
 </head>
@@ -491,47 +506,70 @@
                     <!-- Panneau communes chargées -->
                     <div id="communes-panel" class="hidden mt-3">
                         <div class="bg-gray-800 rounded-lg border border-gray-700 p-3">
-                            <!-- En-tête -->
+                            <!-- En-tête + actions globales -->
                             <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="list" class="w-4 h-4 text-red-500"></i>
                                     <span class="text-xs font-semibold text-gray-300 uppercase tracking-wider">Communes à scraper</span>
                                     <span id="communes-count" class="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded-full">0</span>
                                 </div>
-                                <div class="flex gap-2">
-                                    <button onclick="verifierURLs()" id="btn-verifier" class="btn-secondary text-xs py-1.5">
-                                        <i data-lucide="wifi" class="w-3 h-3"></i>Vérifier disponibilité
+                                <div class="flex gap-2 flex-wrap">
+                                    <button onclick="validerURLsPatterns()" id="btn-valider-patterns" class="btn-secondary text-xs py-1.5">
+                                        <i data-lucide="search" class="w-3 h-3"></i>Étape 1 — Valider patterns
                                     </button>
-                                    <button onclick="supprimerInaccessibles()" id="btn-suppr-inaccess" class="hidden text-xs py-1.5 px-3 bg-red-900/40 text-red-400 border border-red-800 rounded-lg hover:bg-red-900/60 flex items-center gap-1">
-                                        <i data-lucide="trash-2" class="w-3 h-3"></i>Retirer inaccessibles
+                                    <button onclick="lancerGroqSurNonTrouves()" id="btn-groq-search" class="hidden text-xs py-1.5 px-3 bg-purple-900/40 text-purple-300 border border-purple-700 rounded-lg hover:bg-purple-900/60 flex items-center gap-1">
+                                        <i data-lucide="sparkles" class="w-3 h-3"></i>Étape 2 — Groq sur non trouvées
+                                    </button>
+                                    <button onclick="supprimerNonTrouves()" id="btn-suppr-nf" class="hidden text-xs py-1.5 px-3 bg-red-900/40 text-red-400 border border-red-800 rounded-lg hover:bg-red-900/60 flex items-center gap-1">
+                                        <i data-lucide="trash-2" class="w-3 h-3"></i>Retirer non trouvées
                                     </button>
                                 </div>
                             </div>
-                            <!-- Barre de progression vérification -->
-                            <div id="verify-progress" class="hidden mb-3">
+
+                            <!-- Barre de progression globale -->
+                            <div id="validate-progress" class="hidden mb-3">
                                 <div class="flex justify-between text-xs text-gray-400 mb-1">
-                                    <span id="verify-progress-text">Vérification en cours...</span>
-                                    <span id="verify-progress-pct">0%</span>
+                                    <span id="validate-progress-text">Validation en cours...</span>
+                                    <span id="validate-progress-pct">0%</span>
                                 </div>
                                 <div class="h-1.5 bg-gray-700 rounded overflow-hidden">
-                                    <div id="verify-progress-bar" class="h-full bg-red-600 transition-all duration-300" style="width:0%"></div>
+                                    <div id="validate-progress-bar" class="h-full bg-red-600 transition-all duration-300" style="width:0%"></div>
                                 </div>
                             </div>
-                            <!-- Stats vérification -->
-                            <div id="verify-stats" class="hidden grid grid-cols-3 gap-2 mb-3">
-                                <div class="stat-card py-1"><div class="text-xs text-gray-500">Accessibles</div><div class="text-lg font-bold text-green-400" id="v-ok">0</div></div>
-                                <div class="stat-card py-1"><div class="text-xs text-gray-500">Inaccessibles</div><div class="text-lg font-bold text-red-400" id="v-ko">0</div></div>
-                                <div class="stat-card py-1"><div class="text-xs text-gray-500">Non vérifiés</div><div class="text-lg font-bold text-gray-400" id="v-unk">0</div></div>
+
+                            <!-- Stats -->
+                            <div id="validate-stats" class="hidden grid grid-cols-4 gap-2 mb-3">
+                                <div class="stat-card py-1 text-center"><div class="text-xs text-gray-500">✅ Confirmées</div><div class="text-lg font-bold text-green-400" id="vs-confirmed">0</div></div>
+                                <div class="stat-card py-1 text-center"><div class="text-xs text-gray-500">⚠️ Incertaines</div><div class="text-lg font-bold text-yellow-400" id="vs-uncertain">0</div></div>
+                                <div class="stat-card py-1 text-center"><div class="text-xs text-gray-500">❌ Non trouvées</div><div class="text-lg font-bold text-red-400" id="vs-notfound">0</div></div>
+                                <div class="stat-card py-1 text-center"><div class="text-xs text-gray-500">🔵 Non vérifiées</div><div class="text-lg font-bold text-gray-400" id="vs-unknown">0</div></div>
                             </div>
+
                             <!-- Ajout manuel -->
                             <div class="flex gap-2 mb-3">
                                 <input type="text" id="add-url-input" placeholder="https://www.mairie-exemple.fr" class="form-input flex-1 text-xs py-1.5">
+                                <input type="text" id="add-nom-input" placeholder="Nom commune" class="form-input w-32 text-xs py-1.5">
                                 <button onclick="ajouterURLManuelle()" class="btn-secondary text-xs py-1.5 shrink-0">
                                     <i data-lucide="plus" class="w-3 h-3"></i>Ajouter
                                 </button>
                             </div>
-                            <!-- Liste des communes -->
-                            <div id="communes-list" class="space-y-1 overflow-y-auto" style="max-height:320px;"></div>
+
+                            <!-- Tableau communes -->
+                            <div class="overflow-x-auto" style="max-height:380px;overflow-y:auto;">
+                                <table class="w-full text-xs" id="communes-table">
+                                    <thead class="sticky top-0 bg-gray-800 z-10">
+                                        <tr class="text-gray-500 uppercase text-left border-b border-gray-700">
+                                            <th class="py-2 pr-3 font-semibold">Commune</th>
+                                            <th class="py-2 pr-3 font-semibold">Population</th>
+                                            <th class="py-2 pr-3 font-semibold" style="min-width:220px">URL retenue</th>
+                                            <th class="py-2 pr-3 font-semibold">Statut</th>
+                                            <th class="py-2 pr-3 font-semibold">Source</th>
+                                            <th class="py-2 font-semibold">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="communes-tbody"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1491,8 +1529,7 @@ async function chargerCommunesDept() {
         communesData.sort((a, b) => b.population - a.population);
         rendreCommunesList();
         document.getElementById('communes-panel').classList.remove('hidden');
-        document.getElementById('verify-stats').classList.add('hidden');
-        document.getElementById('btn-suppr-inaccess').classList.add('hidden');
+        document.getElementById('validate-stats').classList.add('hidden');
         showToast(`${communesData.length} commune(s) chargée(s)`, 'success');
     } catch(e) {
         showToast('Erreur chargement communes : ' + e.message, 'error');
@@ -1502,45 +1539,95 @@ async function chargerCommunesDept() {
     lucide.createIcons();
 }
 
+// ── Helpers statut ────────────────────────────────────────────────────────────
+const STATUS_LABELS = {
+    confirmed:  { icon: '✅', label: 'Confirmée',   cls: 'confirmed' },
+    uncertain:  { icon: '⚠️', label: 'Incertaine',  cls: 'uncertain' },
+    not_found:  { icon: '❌', label: 'Non trouvée', cls: 'not_found' },
+    manual:     { icon: '✋', label: 'À vérifier',  cls: 'manual' },
+    checking:   { icon: '🔄', label: 'En cours…',   cls: 'checking' },
+    unknown:    { icon: '🔵', label: 'Non vérifiée',cls: 'unknown' },
+};
+const SOURCE_LABELS = {
+    pattern: 'Pattern', groq: 'Groq', manual: 'Manuel',
+    none: '—', groq_failed: 'Groq ✗',
+};
+
+function statusBadge(status) {
+    const s = STATUS_LABELS[status] || STATUS_LABELS.unknown;
+    return `<span class="status-badge ${s.cls}">${s.icon} ${s.label}</span>`;
+}
+function sourceBadge(source) {
+    const src = source || 'none';
+    return `<span class="source-badge ${src}">${SOURCE_LABELS[src] || src}</span>`;
+}
+
 function rendreCommunesList() {
-    const list = document.getElementById('communes-list');
+    const tbody = document.getElementById('communes-tbody');
     const count = document.getElementById('communes-count');
+    if (!tbody) return;
     count.textContent = communesData.length;
     if (!communesData.length) {
-        list.innerHTML = '<p class="text-xs text-gray-500 text-center py-4">Aucune commune pour ces critères.</p>';
+        tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">Aucune commune chargée.</td></tr>';
         return;
     }
-    list.innerHTML = communesData.map((c, i) => {
-        const statusClass = c.url_status === 'ok' ? 'ok' : c.url_status === 'ko' ? 'ko' : c.url_status === 'checking' ? 'checking' : '';
-        const dotClass = statusClass;
-        const statusLabel = c.url_status === 'ok' ? `<span class="text-green-400 text-xs">${c.url_status_code || 200}</span>`
-            : c.url_status === 'ko' ? `<span class="text-red-400 text-xs">KO</span>`
-            : c.url_status === 'checking' ? `<span class="text-yellow-400 text-xs">...</span>`
-            : '';
-        return `<div class="commune-row ${statusClass}" id="crow-${i}">
-            <div class="url-status-dot ${dotClass}" id="dot-${i}"></div>
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-medium text-gray-200 truncate">${c.nom}</span>
-                    <span class="text-xs text-gray-500">${c.population ? c.population.toLocaleString('fr-FR') + ' hab.' : '?'}</span>
-                    ${statusLabel}
+    tbody.innerHTML = communesData.map((c, i) => {
+        const st = c.url_status || 'unknown';
+        const url = c.url_retenue || '';
+        return `<tr class="status-${st}" id="crow-${i}">
+            <td class="py-1.5 pr-3 font-medium text-gray-200 whitespace-nowrap">${c.nom}</td>
+            <td class="py-1.5 pr-3 text-gray-400 whitespace-nowrap">${c.population ? c.population.toLocaleString('fr-FR') : '?'}</td>
+            <td class="py-1.5 pr-3" style="min-width:200px;max-width:260px">
+                <input class="url-edit-input" id="url-inp-${i}" value="${url}"
+                    onchange="communesData[${i}].url_retenue=this.value;communesData[${i}].url_status='unknown';communesData[${i}].url_source='manual';mettreAJourLigne(${i})"
+                    title="${url}">
+            </td>
+            <td class="py-1.5 pr-3" id="status-cell-${i}">${statusBadge(st)}</td>
+            <td class="py-1.5 pr-3" id="source-cell-${i}">${sourceBadge(c.url_source)}</td>
+            <td class="py-1.5">
+                <div class="flex gap-1">
+                    <button onclick="revaliderLigne(${i})" title="Revalider" class="text-gray-500 hover:text-blue-400 transition-colors">
+                        <i data-lucide="refresh-cw" class="w-3 h-3"></i>
+                    </button>
+                    <button onclick="retirerCommune(${i})" title="Retirer" class="text-gray-500 hover:text-red-400 transition-colors">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
                 </div>
-                <select class="text-xs bg-transparent text-blue-400 hover:text-blue-300 truncate w-full mt-0.5 border-0 outline-none cursor-pointer"
-                    style="background:transparent;max-width:100%"
-                    onchange="changerURL(${i}, this.value)">
-                    ${(c.urls_candidates||[c.url_retenue]).map(u => `<option value="${u}" ${u===c.url_retenue?'selected':''}>${u}</option>`).join('')}
-                </select>
-            </div>
-            <button onclick="retirerCommune(${i})" class="text-gray-600 hover:text-red-400 shrink-0 transition-colors" title="Retirer">
-                <i data-lucide="x" class="w-3 h-3"></i>
-            </button>
-        </div>`;
+            </td>
+        </tr>`;
     }).join('');
     lucide.createIcons();
+    mettreAJourStatsValidation();
+}
+
+function mettreAJourLigne(i) {
+    const c = communesData[i];
+    const row = document.getElementById(`crow-${i}`);
+    if (!row) return;
+    row.className = `status-${c.url_status || 'unknown'}`;
+    const sc = document.getElementById(`status-cell-${i}`);
+    const src = document.getElementById(`source-cell-${i}`);
+    if (sc) sc.innerHTML = statusBadge(c.url_status || 'unknown');
+    if (src) src.innerHTML = sourceBadge(c.url_source);
+    mettreAJourStatsValidation();
+}
+
+function mettreAJourStatsValidation() {
+    const counts = { confirmed: 0, uncertain: 0, not_found: 0, unknown: 0, checking: 0, manual: 0 };
+    communesData.forEach(c => { const k = c.url_status || 'unknown'; counts[k] = (counts[k]||0) + 1; });
+    const el = id => document.getElementById(id);
+    if (el('vs-confirmed')) el('vs-confirmed').textContent = counts.confirmed;
+    if (el('vs-uncertain')) el('vs-uncertain').textContent = counts.uncertain;
+    if (el('vs-notfound'))  el('vs-notfound').textContent  = counts.not_found;
+    if (el('vs-unknown'))   el('vs-unknown').textContent   = counts.unknown + counts.checking;
+    const hasNotFound = counts.not_found > 0;
+    el('btn-groq-search')?.classList.toggle('hidden', !hasNotFound);
+    el('btn-suppr-nf')?.classList.toggle('hidden', !hasNotFound);
+    document.getElementById('validate-stats')?.classList.remove('hidden');
 }
 
 function changerURL(i, url) {
-    if (communesData[i]) communesData[i].url_retenue = url;
+    if (communesData[i]) { communesData[i].url_retenue = url; communesData[i].url_source = 'manual'; }
 }
 
 function retirerCommune(i) {
@@ -1549,91 +1636,179 @@ function retirerCommune(i) {
 }
 
 function ajouterURLManuelle() {
-    const inp = document.getElementById('add-url-input');
-    const url = inp.value.trim();
+    const inp  = document.getElementById('add-url-input');
+    const nom  = document.getElementById('add-nom-input');
+    const url  = inp.value.trim();
     if (!url || !url.startsWith('http')) { showToast('URL invalide (doit commencer par http)', 'error'); return; }
-    communesData.push({ nom: url.replace(/https?:\/\//, ''), population: 0, url_retenue: url, urls_candidates: [url], url_status: 'unknown' });
+    communesData.push({
+        nom: nom?.value.trim() || url.replace(/https?:\/\//, ''),
+        population: 0, url_retenue: url,
+        urls_candidates: [url], url_status: 'unknown', url_source: 'manual'
+    });
     rendreCommunesList();
-    inp.value = '';
+    inp.value = ''; if (nom) nom.value = '';
 }
 
-async function verifierURLs() {
+// ── Étape 1 : Validation patterns ─────────────────────────────────────────────
+async function validerURLsPatterns() {
     if (!communesData.length) return;
-    const urls = communesData.map(c => c.url_retenue);
+    const btn = document.getElementById('btn-valider-patterns');
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i>Validation…';
+    lucide.createIcons();
 
-    // Marquer tous en "checking"
-    communesData.forEach(c => c.url_status = 'checking');
+    const prog    = document.getElementById('validate-progress');
+    const progBar = document.getElementById('validate-progress-bar');
+    const progPct = document.getElementById('validate-progress-pct');
+    const progTxt = document.getElementById('validate-progress-text');
+    prog.classList.remove('hidden');
+
+    // Marquer tout en checking
+    communesData.forEach(c => { c.url_status = 'checking'; c.url_source = c.url_source || 'none'; });
     rendreCommunesList();
 
-    const prog = document.getElementById('verify-progress');
-    const progBar = document.getElementById('verify-progress-bar');
-    const progPct = document.getElementById('verify-progress-pct');
-    const progTxt = document.getElementById('verify-progress-text');
-    prog.classList.remove('hidden');
-    progBar.style.width = '0%';
-    progPct.textContent = '0%';
-    progTxt.textContent = `Vérification de ${urls.length} URLs...`;
-
-    const btn = document.getElementById('btn-verifier');
-    btn.disabled = true;
-
-    try {
-        // Envoyer par lots de 20 pour avoir du feedback progressif
-        const batchSize = 20;
-        let done = 0;
-        for (let start = 0; start < urls.length; start += batchSize) {
-            const batch = urls.slice(start, start + batchSize);
-            const r = await fetch('/api/urls/verify', {
+    const batchSize = 8;
+    let done = 0;
+    for (let start = 0; start < communesData.length; start += batchSize) {
+        const batch = communesData.slice(start, start + batchSize);
+        try {
+            const r = await fetch('/api/communes/validate-urls', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({urls: batch, timeout: 6})
+                body: JSON.stringify({ communes: batch, timeout: 5 })
             });
             if (r.ok) {
                 const data = await r.json();
+                data.results.forEach((res, j) => {
+                    const idx = start + j;
+                    communesData[idx] = { ...communesData[idx], ...res };
+                    mettreAJourLigne(idx);
+                    // Mettre à jour l'input URL
+                    const inp = document.getElementById(`url-inp-${idx}`);
+                    if (inp) inp.value = res.url_retenue || '';
+                });
+            }
+        } catch(e) {}
+        done += batch.length;
+        const pct = Math.round(done / communesData.length * 100);
+        progBar.style.width = pct + '%';
+        progPct.textContent = pct + '%';
+        progTxt.textContent = `${done}/${communesData.length} communes vérifiées`;
+    }
+
+    prog.classList.add('hidden');
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="search" class="w-3 h-3"></i>Étape 1 — Valider patterns';
+    lucide.createIcons();
+
+    const nf = communesData.filter(c => c.url_status === 'not_found').length;
+    const ok = communesData.filter(c => c.url_status === 'confirmed').length;
+    showToast(`✅ ${ok} confirmées, ❌ ${nf} non trouvées`, nf > ok ? 'error' : 'success');
+}
+
+// ── Étape 2 : Groq sur non trouvées ──────────────────────────────────────────
+async function lancerGroqSurNonTrouves() {
+    const nonTrouves = communesData.filter(c => c.url_status === 'not_found');
+    if (!nonTrouves.length) { showToast('Aucune commune non trouvée', 'error'); return; }
+
+    const btn = document.getElementById('btn-groq-search');
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i>Groq en cours…';
+    lucide.createIcons();
+
+    const prog    = document.getElementById('validate-progress');
+    const progBar = document.getElementById('validate-progress-bar');
+    const progPct = document.getElementById('validate-progress-pct');
+    const progTxt = document.getElementById('validate-progress-text');
+    prog.classList.remove('hidden');
+    progBar.style.width = '0%';
+    progTxt.textContent = `Groq : recherche pour ${nonTrouves.length} communes…`;
+
+    // Marquer en checking
+    nonTrouves.forEach(c => {
+        const idx = communesData.indexOf(c);
+        communesData[idx].url_status = 'checking';
+        mettreAJourLigne(idx);
+    });
+
+    const batchSize = 5;
+    let done = 0;
+    for (let start = 0; start < nonTrouves.length; start += batchSize) {
+        const batch = nonTrouves.slice(start, start + batchSize);
+        try {
+            const r = await fetch('/api/communes/groq-search', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    communes: batch,
+                    groq_api_key: iaCfg.groq_api_key,
+                    groq_model: iaCfg.groq_model || 'llama-3.3-70b-versatile',
+                    timeout: 5
+                })
+            });
+            if (r.ok) {
+                const data = await r.json();
+                if (data.error) { showToast('Groq : ' + data.error, 'error'); break; }
                 data.results.forEach(res => {
-                    const idx = communesData.findIndex(c => c.url_retenue === res.url);
+                    const idx = communesData.findIndex(c => c.nom === res.nom);
                     if (idx >= 0) {
-                        communesData[idx].url_status = res.ok ? 'ok' : 'ko';
-                        communesData[idx].url_status_code = res.status;
-                        if (res.final_url && res.final_url !== res.url) {
-                            communesData[idx].url_retenue = res.final_url;
-                        }
+                        communesData[idx] = { ...communesData[idx], ...res };
+                        mettreAJourLigne(idx);
+                        const inp = document.getElementById(`url-inp-${idx}`);
+                        if (inp) inp.value = res.url_retenue || '';
                     }
                 });
             }
-            done += batch.length;
-            const pct = Math.round(done / urls.length * 100);
-            progBar.style.width = pct + '%';
-            progPct.textContent = pct + '%';
-            progTxt.textContent = `${done}/${urls.length} vérifiées`;
-            rendreCommunesList();
-        }
-
-        // Stats finales
-        const ok = communesData.filter(c => c.url_status === 'ok').length;
-        const ko = communesData.filter(c => c.url_status === 'ko').length;
-        const unk = communesData.filter(c => c.url_status === 'unknown' || c.url_status === 'checking').length;
-        document.getElementById('v-ok').textContent = ok;
-        document.getElementById('v-ko').textContent = ko;
-        document.getElementById('v-unk').textContent = unk;
-        document.getElementById('verify-stats').classList.remove('hidden');
-        if (ko > 0) document.getElementById('btn-suppr-inaccess').classList.remove('hidden');
-        prog.classList.add('hidden');
-        showToast(`✅ ${ok} accessibles, ❌ ${ko} inaccessibles`, ok > ko ? 'success' : 'error');
-    } catch(e) {
-        showToast('Erreur vérification : ' + e.message, 'error');
-        prog.classList.add('hidden');
+        } catch(e) {}
+        done += batch.length;
+        const pct = Math.round(done / nonTrouves.length * 100);
+        progBar.style.width = pct + '%';
+        progPct.textContent = pct + '%';
+        progTxt.textContent = `Groq : ${done}/${nonTrouves.length} traitées`;
     }
+
+    prog.classList.add('hidden');
     btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="sparkles" class="w-3 h-3"></i>Étape 2 — Groq sur non trouvées';
+    lucide.createIcons();
+
+    const ok = communesData.filter(c => c.url_status === 'confirmed' && c.url_source === 'groq').length;
+    showToast(`Groq : ${ok} URL(s) trouvée(s) et confirmée(s)`, ok > 0 ? 'success' : 'error');
 }
 
-function supprimerInaccessibles() {
-    const avant = communesData.length;
-    communesData = communesData.filter(c => c.url_status !== 'ko');
-    rendreCommunesList();
-    document.getElementById('btn-suppr-inaccess').classList.add('hidden');
-    showToast(`${avant - communesData.length} commune(s) inaccessible(s) retirée(s)`, 'success');
+// ── Revalider une ligne ───────────────────────────────────────────────────────
+async function revaliderLigne(i) {
+    const c = communesData[i];
+    communesData[i].url_status = 'checking';
+    mettreAJourLigne(i);
+    try {
+        const r = await fetch('/api/communes/validate-urls', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ communes: [{ ...c, urls_candidates: [c.url_retenue] }], timeout: 5 })
+        });
+        if (r.ok) {
+            const data = await r.json();
+            if (data.results?.[0]) {
+                communesData[i] = { ...communesData[i], ...data.results[0] };
+                const inp = document.getElementById(`url-inp-${i}`);
+                if (inp) inp.value = communesData[i].url_retenue || '';
+            }
+        }
+    } catch(e) { communesData[i].url_status = 'unknown'; }
+    mettreAJourLigne(i);
 }
+
+function supprimerNonTrouves() {
+    const avant = communesData.length;
+    communesData = communesData.filter(c => c.url_status !== 'not_found');
+    rendreCommunesList();
+    showToast(`${avant - communesData.length} commune(s) non trouvée(s) retirée(s)`, 'success');
+}
+
+// Alias pour compat avec l'ancien code
+function supprimerInaccessibles() { supprimerNonTrouves(); }
+function verifierURLs() { validerURLsPatterns(); }
 
 // ── Config IA ─────────────────────────────────────────────────────────────────
 async function chargerConfigIA() {

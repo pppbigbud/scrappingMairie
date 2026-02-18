@@ -2403,6 +2403,160 @@ def verify_urls():
     return jsonify({'results': results})
 
 
+@app.route('/api/communes/validate-urls', methods=['POST'])
+def validate_commune_urls():
+    """
+    Étape 1 : Pour chaque commune, tester les URLs candidates en parallèle.
+    Retourne pour chaque commune : url_retenue, statut (confirmed/uncertain/not_found), source, http_status.
+    """
+    import concurrent.futures, unicodedata as _ud
+
+    body = request.get_json() or {}
+    communes = body.get('communes', [])   # [{nom, population, urls_candidates, dept_code}]
+    timeout  = body.get('timeout', 5)
+
+    MAIRIE_KW = re.compile(
+        r'mairie|commune|municipalit|ville\s+de|h[oô]tel\s+de\s+ville|conseil\s+municipal',
+        re.I
+    )
+    HDRS = {'User-Agent': 'Mozilla/5.0 (compatible; HardScrapper/1.0)'}
+
+    def probe_url(url):
+        """HEAD + GET partiel pour vérifier existence et nature mairie."""
+        try:
+            r = requests.head(url, timeout=timeout, allow_redirects=True, headers=HDRS, verify=False)
+            if r.status_code >= 400:
+                return None, r.status_code, r.url
+            final = r.url
+            # Vérification contenu : GET les premiers 4 Ko
+            try:
+                rg = requests.get(final, timeout=timeout, headers=HDRS, verify=False, stream=True)
+                chunk = next(rg.iter_content(4096), b'')
+                rg.close()
+                text = chunk.decode('utf-8', errors='ignore').lower()
+                is_mairie = bool(MAIRIE_KW.search(text))
+            except Exception:
+                is_mairie = False
+            return is_mairie, r.status_code, final
+        except Exception:
+            return None, 0, url
+
+    def process_commune(c):
+        nom = c.get('nom', '')
+        candidates = c.get('urls_candidates', [])
+        for url in candidates:
+            is_mairie, code, final_url = probe_url(url)
+            if is_mairie is None:
+                continue  # inaccessible
+            if is_mairie:
+                return {**c, 'url_retenue': final_url, 'url_status': 'confirmed',
+                        'url_source': 'pattern', 'http_status': code}
+            else:
+                # Accessible mais pas clairement une mairie → incertain
+                return {**c, 'url_retenue': final_url, 'url_status': 'uncertain',
+                        'url_source': 'pattern', 'http_status': code}
+        return {**c, 'url_retenue': '', 'url_status': 'not_found',
+                'url_source': 'none', 'http_status': 0}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        results = list(ex.map(process_commune, communes))
+
+    return jsonify({'results': results})
+
+
+@app.route('/api/communes/groq-search', methods=['POST'])
+def groq_search_commune_url():
+    """
+    Étape 2 : Pour les communes not_found, interroger Groq pour trouver l'URL officielle,
+    puis re-valider via HEAD.
+    """
+    import concurrent.futures
+
+    body = request.get_json() or {}
+    communes  = body.get('communes', [])   # communes avec url_status == 'not_found'
+    groq_key  = body.get('groq_api_key', '')
+    groq_model = body.get('groq_model', 'llama-3.3-70b-versatile')
+    timeout   = body.get('timeout', 5)
+
+    if not groq_key:
+        # Essayer de lire depuis la config sauvegardée
+        ia_cfg_path = os.path.join(_PROJECT_ROOT, 'config', 'ia_config.json')
+        if os.path.exists(ia_cfg_path):
+            with open(ia_cfg_path, 'r') as f:
+                ia_cfg = json.load(f)
+            groq_key = ia_cfg.get('groq_api_key', '')
+    if not groq_key:
+        return jsonify({'error': 'Clé API Groq manquante'}), 400
+
+    MAIRIE_KW = re.compile(
+        r'mairie|commune|municipalit|ville\s+de|h[oô]tel\s+de\s+ville|conseil\s+municipal',
+        re.I
+    )
+    HDRS = {'User-Agent': 'Mozilla/5.0 (compatible; HardScrapper/1.0)'}
+    URL_RE = re.compile(r'https?://[^\s\'"<>]+', re.I)
+
+    def probe_url(url):
+        try:
+            r = requests.head(url, timeout=timeout, allow_redirects=True, headers=HDRS, verify=False)
+            if r.status_code >= 400:
+                return None, r.status_code, r.url
+            final = r.url
+            try:
+                rg = requests.get(final, timeout=timeout, headers=HDRS, verify=False, stream=True)
+                chunk = next(rg.iter_content(4096), b'')
+                rg.close()
+                text = chunk.decode('utf-8', errors='ignore').lower()
+                is_mairie = bool(MAIRIE_KW.search(text))
+            except Exception:
+                is_mairie = False
+            return is_mairie, r.status_code, final
+        except Exception:
+            return None, 0, url
+
+    def ask_groq(nom, dept_code):
+        prompt = (
+            f"Quel est l'URL officiel du site internet de la mairie de {nom} "
+            f"dans le département {dept_code} en France ? "
+            f"Réponds uniquement avec l'URL complète, sans explication."
+        )
+        try:
+            resp = requests.post(
+                'https://api.groq.com/openai/v1/chat/completions',
+                headers={'Authorization': f'Bearer {groq_key}', 'Content-Type': 'application/json'},
+                json={'model': groq_model, 'messages': [{'role': 'user', 'content': prompt}],
+                      'max_tokens': 80, 'temperature': 0},
+                timeout=15
+            )
+            resp.raise_for_status()
+            content = resp.json()['choices'][0]['message']['content'].strip()
+            urls = URL_RE.findall(content)
+            return urls[0].rstrip('.,;)') if urls else None
+        except Exception as e:
+            return None
+
+    def process_commune(c):
+        nom       = c.get('nom', '')
+        dept_code = c.get('dept_code', c.get('departement', ''))
+        url = ask_groq(nom, dept_code)
+        if not url:
+            return {**c, 'url_retenue': '', 'url_status': 'not_found',
+                    'url_source': 'groq_failed', 'http_status': 0}
+        is_mairie, code, final_url = probe_url(url)
+        if is_mairie:
+            status = 'confirmed'
+        elif is_mairie is False:
+            status = 'uncertain'
+        else:
+            status = 'manual'
+        return {**c, 'url_retenue': final_url or url, 'url_status': status,
+                'url_source': 'groq', 'http_status': code}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        results = list(ex.map(process_commune, communes))
+
+    return jsonify({'results': results})
+
+
 @app.route('/api/communes/auvergne')
 def get_communes_auvergne():
     """Get list of Auvergne communes with population filter"""
