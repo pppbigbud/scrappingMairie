@@ -676,7 +676,8 @@ class ScraperCore:
         else:
             _log("   ℹ️ Aucune section prioritaire détectée (délibérations, actualités…)")
 
-        for section_url, section_type in sources_prioritaires:
+        nb_sections = len(sources_prioritaires)
+        for sec_idx, (section_url, section_type) in enumerate(sources_prioritaires, 1):
             if section_url in seen_urls:
                 continue
             try:
@@ -686,7 +687,8 @@ class ScraperCore:
 
                 if r.status_code != 200:
                     _log(
-                        f"   ⚠️ Section {section_type} HTTP {r.status_code} → {section_url}",
+                        f"   [{sec_idx}/{nb_sections}] ⚠️ Section {section_type}"
+                        f" HTTP {r.status_code} → {section_url}",
                         "warning",
                     )
                     continue
@@ -697,25 +699,61 @@ class ScraperCore:
 
                 if nb_mots < 100:
                     _log(
-                        f"   ⚠️ Section [{section_type}] {nb_mots} mots — vide ou non lisible"
-                        f" | {section_url}",
+                        f"   [{sec_idx}/{nb_sections}] ⚠️ [{section_type}] {nb_mots} mots"
+                        f" — vide ou non lisible | {section_url}",
                         "warning",
                     )
                 else:
                     _log(
-                        f"   📂 Section [{section_type}] {nb_mots} mots | {section_url}"
+                        f"   [{sec_idx}/{nb_sections}] 📂 [{section_type}] {nb_mots} mots"
+                        f" | {section_url}"
                     )
                     if status_callback and extrait:
                         _log(f'      Extrait : "{extrait}"')
 
-                # Mots-clés dans la section
+                # Mots-clés dans la section + création doc HTML si pertinent
                 analyse_section = self.analyser_texte(texte_section)
                 if analyse_section["mots_trouves"]:
-                    _log(
-                        f"      🔑 Mots-clés section : {analyse_section['mots_trouves']}"
-                    )
+                    _log(f"      🔑 Mots-clés section : {analyse_section['mots_trouves']}")
                 else:
                     _log("      — Aucun mot-clé trouvé dans cette section")
+
+                # Bug 1 fix : créer un doc HTML si la section a un score > 0
+                if analyse_section["score"] > 0 and section_url not in seen_urls:
+                    seen_urls.add(section_url)
+                    page_soup_sec = BeautifulSoup(r.text, "html.parser")
+                    date_pub_sec = self.extraire_date(
+                        soup=page_soup_sec, texte=texte_section, url=section_url
+                    )
+                    if self.est_dans_fenetre(date_pub_sec):
+                        sf_sec = self.analyser_signaux_faibles(texte_section)
+                        sc_sec = self.calculer_score_composite(
+                            analyse_section, sf_sec, date_pub_sec, section_type
+                        )
+                        fname_sec = (
+                            os.path.basename(urlparse(section_url).path).strip("/")
+                            or section_type
+                        )
+                        doc_sec = self._build_result(
+                            fname_sec, section_url, url, commune, dept,
+                            texte_section, analyse_section,
+                            source_type=section_type,
+                            date_pub=date_pub_sec,
+                            signaux_faibles=sf_sec,
+                            score_composite=sc_sec,
+                        )
+                        doc_sec["document_type"] = "html"
+                        found.append(doc_sec)
+                        bilan["docs_avec_mots_cles"] += 1
+                        bilan["docs_retenus"] += 1
+                        bilan["score_max"] = max(bilan["score_max"], sc_sec["score_composite"])
+                        _log(
+                            f"      ✅ Doc retenu : {fname_sec}"
+                            f" | score={sc_sec['score_composite']}"
+                            f" | {sf_sec['maturite_emoji']} {sf_sec['maturite_label']}"
+                        )
+                    else:
+                        _log("      ⏭️ Section hors fenêtre temporelle — ignorée")
 
                 sub_soup = BeautifulSoup(r.text, "html.parser")
 
@@ -809,14 +847,19 @@ class ScraperCore:
             except requests.RequestException as exc:
                 _log(f"   ⚠️ Erreur section {section_url} : {exc}", "warning")
 
-        # ── Étape 3 : Pages HTML pertinentes ──────────────────────────────────
-        for link in home_soup.find_all("a", href=True):
-            full_url = urljoin(url, link.get("href", ""))
+        # ── Étape 3 : Toutes les pages HTML internes non encore visitées ─────
+        html3_links = [
+            urljoin(url, lk.get("href", ""))
+            for lk in home_soup.find_all("a", href=True)
+        ]
+        html3_links = [
+            u for u in dict.fromkeys(html3_links)
+            if urlparse(u).netloc == base_netloc and u not in seen_urls
+            and not self._is_document(u)
+        ]
+        nb_html3 = len(html3_links)
+        for h3_idx, full_url in enumerate(html3_links, 1):
             if full_url in seen_urls:
-                continue
-            if urlparse(full_url).netloc != base_netloc:
-                continue
-            if not self._is_relevant_html(full_url):
                 continue
             seen_urls.add(full_url)
             try:
@@ -830,7 +873,6 @@ class ScraperCore:
                 nb_mots = len(texte.split()) if texte else 0
 
                 if not texte or nb_mots < 50:
-                    _log(f"   ⚠️ Page HTML vide ({nb_mots} mots) : {full_url}", "warning")
                     continue
 
                 analyse = self.analyser_texte(texte)
@@ -846,8 +888,8 @@ class ScraperCore:
 
                 bilan["docs_avec_mots_cles"] += 1
                 _log(
-                    f"   🌐 HTML pertinent : {full_url} | {nb_mots} mots"
-                    f" | score {pts_prio}+{pts_sec}+{pts_bud}={score_kw}"
+                    f"   [{h3_idx}/{nb_html3}] 🌐 HTML pertinent : {full_url}"
+                    f" | {nb_mots} mots | score {pts_prio}+{pts_sec}+{pts_bud}={score_kw}"
                 )
 
                 date_pub = self.extraire_date(soup=page_soup, texte=texte, url=full_url)
