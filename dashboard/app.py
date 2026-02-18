@@ -2319,39 +2319,6 @@ def export_results():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/config/ia', methods=['GET', 'POST'])
-def config_ia():
-    """Get or update AI configuration"""
-    config_file = 'config/ia_config.json'
-    
-    if request.method == 'GET':
-        try:
-            if os.path.exists(config_file):
-                with open(config_file, 'r', encoding='utf-8') as f:
-                    return jsonify(json.load(f))
-            else:
-                # Return default config
-                return jsonify({
-                    'system_prompt': '',
-                    'model_name': 'mistral',
-                    'max_context': 1000,
-                    'score_threshold': 7
-                })
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-    
-    elif request.method == 'POST':
-        try:
-            config_data = request.json
-            os.makedirs('config', exist_ok=True)
-            
-            with open(config_file, 'w', encoding='utf-8') as f:
-                json.dump(config_data, f, ensure_ascii=False, indent=2)
-            
-            return jsonify({'message': 'Configuration saved successfully'})
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-
 @app.route('/api/communes/auvergne')
 def get_communes_auvergne():
     """Get list of Auvergne communes with population filter"""
