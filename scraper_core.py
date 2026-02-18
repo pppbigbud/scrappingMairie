@@ -173,6 +173,8 @@ class ScraperCore:
         self.signaux_actifs = sf_cfg
         # Maturité minimale à afficher
         self.maturite_min = cfg.get("maturite_min", "reflexion")
+        # Mode de recherche : "complet" | "conseil" | "pdf"
+        self.mode_recherche = cfg.get("mode_recherche", "complet")
         log.info(
             "Config chargée — campagne : %s | fenêtre : %dj | mots prioritaires : %s",
             cfg.get("nom_campagne", "?"),
@@ -538,6 +540,7 @@ class ScraperCore:
         Logs diagnostics complets via status_callback.
         """
         self._reload_config()
+        mode_recherche = self.mode_recherche  # "complet" | "conseil" | "pdf"
 
         def _log(msg: str, level: str = "info") -> None:
             getattr(log, level)(msg)
@@ -672,11 +675,32 @@ class ScraperCore:
 
         # ── Étape 2 : Sources prioritaires ────────────────────────────────────
         sources_prioritaires = self._get_sources_prioritaires(url, home_soup, base_netloc)
+
+        if mode_recherche == "conseil":
+            # Filtrer uniquement les sections liées aux conseils / délibérations
+            _CONSEIL_MOTS = [
+                "conseil-municipal", "deliber", "seance", "compte-rendu", "cr-conseil",
+                "pv-conseil", "proces-verbal", "actes-administratifs", "documents-officiels",
+                "budget-municipal", "budget-primitif",
+            ]
+            total_avant = len(sources_prioritaires)
+            sources_prioritaires = [
+                (u, st) for u, st in sources_prioritaires
+                if any(m in u.lower() for m in _CONSEIL_MOTS)
+            ]
+            _log(
+                f"🎯 Mode conseils municipaux — {len(sources_prioritaires)} section(s)"
+                f" candidates sur {total_avant} détectées"
+            )
+        elif mode_recherche == "pdf":
+            _log("📄 Mode PDFs uniquement — étape 2 (sections HTML) ignorée")
+            sources_prioritaires = []  # on saute toute l'étape 2
+
         if sources_prioritaires:
-            _log(f"📂 {len(sources_prioritaires)} section(s) détectées")
+            _log(f"📂 {len(sources_prioritaires)} section(s) à visiter")
             _log(f"📋 Ordre de visite : {[u for u, _ in sources_prioritaires[:10]]}" +
                  (f" … (+{len(sources_prioritaires)-10} autres)" if len(sources_prioritaires) > 10 else ""))
-        else:
+        elif mode_recherche == "complet":
             _log("   ℹ️ Aucune section prioritaire détectée (délibérations, actualités…)")
 
         _TIMEOUT_MOTS = ["deliber", "conseil", "budget", "projet", "marche"]
@@ -880,15 +904,19 @@ class ScraperCore:
                 )
 
         # ── Étape 3 : Toutes les pages HTML internes non encore visitées ─────
-        html3_links = [
-            urljoin(url, lk.get("href", ""))
-            for lk in home_soup.find_all("a", href=True)
-        ]
-        html3_links = [
-            u for u in dict.fromkeys(html3_links)
-            if urlparse(u).netloc == base_netloc and u not in seen_urls
-            and not self._is_document(u)
-        ]
+        if mode_recherche in ("conseil", "pdf"):
+            _log(f"   ℹ️ Mode {mode_recherche} — étape 3 (pages génériques) ignorée")
+            html3_links = []
+        else:
+            html3_links = [
+                urljoin(url, lk.get("href", ""))
+                for lk in home_soup.find_all("a", href=True)
+            ]
+            html3_links = [
+                u for u in dict.fromkeys(html3_links)
+                if urlparse(u).netloc == base_netloc and u not in seen_urls
+                and not self._is_document(u)
+            ]
         nb_html3 = len(html3_links)
         for h3_idx, full_url in enumerate(html3_links, 1):
             if full_url in seen_urls:
@@ -948,6 +976,49 @@ class ScraperCore:
 
             except requests.RequestException:
                 pass
+
+        # ── Étape 4 : Mode PDF — scanner tous les liens PDF de la page d'accueil ─
+        if mode_recherche == "pdf":
+            pdf_home_links = [
+                urljoin(url, lk.get("href", ""))
+                for lk in home_soup.find_all("a", href=True)
+                if self._is_document(urljoin(url, lk.get("href", "")))
+            ]
+            pdf_home_links = [u for u in dict.fromkeys(pdf_home_links) if u not in seen_urls]
+            _log(f"📄 Mode PDFs — {len(pdf_home_links)} lien(s) PDF détecté(s) sur la page d'accueil")
+            for pdf_url in pdf_home_links:
+                seen_urls.add(pdf_url)
+                fname = os.path.basename(urlparse(pdf_url).path) or pdf_url
+                _log(f"   📎 PDF : {fname[:60]}")
+                bilan["pdfs_tentes"] += 1
+                texte, nb_pages, nb_chars = self._extraire_texte_document_verbose(pdf_url, session, _log)
+                if not texte:
+                    bilan["pdfs_scannes"] += 1
+                    continue
+                bilan["pdfs_reussis"] += 1
+                analyse = self.analyser_texte(texte)
+                if not analyse["pertinent"]:
+                    bilan["docs_ecartes"] += 1
+                    continue
+                date_pub = self.extraire_date(url=pdf_url, texte=texte)
+                sf = self.analyser_signaux_faibles(texte)
+                sc = self.calculer_score_composite(analyse, sf, date_pub, "pdf")
+                doc = self._build_result(
+                    fname, pdf_url, url, commune, dept, texte, analyse,
+                    source_type="pdf",
+                    date_pub=date_pub,
+                    signaux_faibles=sf,
+                    score_composite=sc,
+                )
+                _hash = hashlib.md5(texte[:500].encode()).hexdigest()
+                if _hash in seen_hashes:
+                    _log(f"      ⏭️ Contenu dupliqué ignoré : {fname}")
+                    continue
+                seen_hashes.add(_hash)
+                found.append(doc)
+                bilan["docs_retenus"] += 1
+                bilan["score_max"] = max(bilan["score_max"], sc["score_composite"])
+                _log(f"      ✅ Retenu | score={sc['score_composite']} | {sf['maturite_emoji']} {sf['maturite_label']}")
 
         # ── Bilan par site ─────────────────────────────────────────────────────
         found.sort(key=lambda r: r.get("score_composite", 0), reverse=True)

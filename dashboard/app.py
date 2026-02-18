@@ -1052,6 +1052,20 @@ def run_analysis(config):
 
             status_queue.put({'status': 'running', 'message': f'🎯 {len(targets)} site(s) à scraper', 'timestamp': datetime.now().isoformat()})
 
+            # ── Mode de recherche — injecter dans search_config.json ──────────
+            mode_recherche = config.get('mode_recherche', 'complet')
+            try:
+                cfg_path = os.path.join(_PROJECT_ROOT, 'config', 'search_config.json')
+                with open(cfg_path, 'r', encoding='utf-8') as _f:
+                    _cfg_data = json.load(_f)
+                _cfg_data['mode_recherche'] = mode_recherche
+                with open(cfg_path, 'w', encoding='utf-8') as _f:
+                    json.dump(_cfg_data, _f, ensure_ascii=False, indent=2)
+            except Exception as _e:
+                status_queue.put({'status': 'warning', 'message': f'⚠️ Impossible d\'écrire mode_recherche dans config : {_e}', 'timestamp': datetime.now().isoformat()})
+            _MODE_LABELS = {'complet': '🌐 Complet', 'conseil': '📋 Conseils municipaux', 'pdf': '📄 PDFs uniquement'}
+            status_queue.put({'status': 'running', 'message': f'🔎 Mode de recherche : {_MODE_LABELS.get(mode_recherche, mode_recherche)}', 'timestamp': datetime.now().isoformat()})
+
             # ── Mode test : forcer seuils bas ─────────────────────────────────
             nom_campagne = config.get('nom_campagne', '')
             if 'TEST' in nom_campagne.upper():
