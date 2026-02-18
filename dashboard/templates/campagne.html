@@ -25,6 +25,9 @@
         .form-textarea:focus{outline:none;border-color:#dc2626}
         .preset-btn{background:#111827;border:1px solid #374151;color:#9ca3af;padding:.4rem .75rem;border-radius:.5rem;font-size:.8rem;cursor:pointer;transition:all .2s;white-space:nowrap}
         .preset-btn:hover{border-color:#dc2626;color:#f3f4f6}.preset-btn.active{border-color:#dc2626;color:#dc2626;background:#1f2937}
+        .preset-btn-test{background:#1a1025;border:1px solid #6b21a8;color:#a78bfa;padding:.4rem .75rem;border-radius:.5rem;font-size:.8rem;cursor:pointer;transition:all .2s;white-space:nowrap}
+        .preset-btn-test:hover{border-color:#a855f7;color:#c4b5fd;background:#1e1035}
+        .preset-btn-test.active{border-color:#a855f7;color:#a855f7;background:#2e1065}
         .slider{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:#374151;outline:none;width:100%}
         .slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#dc2626;cursor:pointer}
         .toast{position:fixed;bottom:1.5rem;right:1.5rem;padding:.875rem 1.25rem;border-radius:.5rem;font-weight:500;z-index:9999;transform:translateY(100px);opacity:0;transition:all .3s}
@@ -149,6 +152,7 @@
                 <button class="preset-btn" onclick="appliquerPreset('bornes_recharge',this)">⚡ Bornes Recharge VE</button>
                 <button class="preset-btn" onclick="appliquerPreset('renovation_batiments',this)">🏗️ Rénovation Bâtiments</button>
                 <button class="preset-btn" onclick="appliquerPreset('custom',this)">✏️ Personnalisé</button>
+                <button class="preset-btn-test" onclick="appliquerPreset('mode_test',this)" title="Mode diagnostic — mots-clés larges et seuils bas pour vérifier que le pipeline scraping fonctionne correctement.">🧪 Mode Test</button>
             </div>
         </div>
 
@@ -824,6 +828,7 @@ const AIDE = {
             <li><strong class="text-orange-400">Pompes à Chaleur</strong> — PAC, géothermie, aérothermie</li>
             <li><strong class="text-blue-400">Bornes Recharge VE</strong> — Mobilité électrique, IRVE</li>
             <li><strong class="text-green-400">Rénovation Bâtiments</strong> — Isolation, BBC, rénovation énergétique</li>
+            <li><strong class="text-purple-400">🧪 Mode Test</strong> — Mots-clés larges et seuils à 1 pour diagnostiquer le pipeline scraping</li>
         </ul>
         <p class="mt-2 text-gray-400 text-xs">Vous pouvez modifier les mots-clés après avoir appliqué un preset.</p>`
     },
@@ -1314,11 +1319,41 @@ async function resetConfig() {
     } catch(e) { showToast('Erreur réseau','error'); }
 }
 
+const PRESET_TEST = {
+    nom_campagne: 'TEST - Validation pipeline',
+    description: 'Mode diagnostic — seuils bas et mots-clés larges pour valider le pipeline.',
+    mots_cles: {
+        prioritaires: ['énergie','travaux','projet','budget','investissement'],
+        secondaires:  ['rénovation','équipement','bâtiment','commune','municipal'],
+        budget:       ['financement','subvention','crédit','dépense'],
+    },
+    zones_geographiques: { departements: [], population_min: 0, population_max: 9999999 },
+    parametres_scraping: {
+        seuil_confiance_min: 1,
+        delai_entre_requetes: 1.5,
+        timeout: 30,
+        profondeur: 'moyen',
+    },
+    seuil_ia: 1,
+    fenetre_temporelle: 365,
+    signaux_faibles_actifs: { budgetaires: true, reflexion: true, consultation: true },
+    maturite_min: 'reflexion',
+    ia_mode: 'manual',
+};
+
 function appliquerPreset(key, btn) {
-    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.preset-btn, .preset-btn-test').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     if (key === 'custom') {
         ['nom_campagne','description','mots_prioritaires','mots_secondaires','mots_budget'].forEach(id => document.getElementById(id).value='');
+        return;
+    }
+    if (key === 'mode_test') {
+        remplir(PRESET_TEST);
+        // Forcer mode IA manuel
+        const manualRadio = document.querySelector('input[name="ia_mode"][value="manual"]');
+        if (manualRadio) { manualRadio.checked = true; manualRadio.dispatchEvent(new Event('change')); }
+        showToast('🧪 Mode Test activé — seuils bas, fenêtre 365j', 'success');
         return;
     }
     const p = presetsData[key];
