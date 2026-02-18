@@ -78,6 +78,9 @@
         .commune-row{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border-radius:.375rem;background:#111827;border:1px solid #1f2937}
         .url-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:#4b5563}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        /* Boutons fenêtre temporelle */
+        .fenetre-btn{transition:all .15s}
+        .fenetre-btn.active-fen{border-color:#dc2626!important;color:#f87171!important;background:rgba(220,38,38,.12)!important}
     </style>
 </head>
 <body class="bg-gray-900 text-gray-100 min-h-screen">
@@ -287,6 +290,58 @@
                                 <option value="leger">Léger — page principale</option>
                                 <option value="moyen" selected>Moyen — sections principales</option>
                                 <option value="profond">Profond — toutes sous-pages</option>
+                            </select>
+                        </div>
+
+                        <!-- Fenêtre temporelle -->
+                        <div class="pt-2 border-t border-gray-700">
+                            <label class="block text-xs text-gray-400 mb-2 flex items-center gap-1">
+                                <i data-lucide="calendar-range" class="w-3 h-3"></i>
+                                Fenêtre temporelle
+                                <button class="help-btn" onclick="aide('fenetre_temporelle')">?</button>
+                            </label>
+                            <div class="flex gap-1 flex-wrap">
+                                <button onclick="setFenetre(30)"  id="fen-30"  class="fenetre-btn text-xs px-2 py-1 rounded border border-gray-600 text-gray-400 hover:border-red-500 hover:text-red-400 transition-colors">30j</button>
+                                <button onclick="setFenetre(60)"  id="fen-60"  class="fenetre-btn text-xs px-2 py-1 rounded border border-gray-600 text-gray-400 hover:border-red-500 hover:text-red-400 transition-colors">60j</button>
+                                <button onclick="setFenetre(90)"  id="fen-90"  class="fenetre-btn text-xs px-2 py-1 rounded border border-red-600 text-red-400 bg-red-900/20 transition-colors active-fen">90j</button>
+                                <button onclick="setFenetre(180)" id="fen-180" class="fenetre-btn text-xs px-2 py-1 rounded border border-gray-600 text-gray-400 hover:border-red-500 hover:text-red-400 transition-colors">180j</button>
+                            </div>
+                            <input type="hidden" id="fenetre_temporelle" value="90">
+                        </div>
+
+                        <!-- Signaux faibles -->
+                        <div class="pt-2 border-t border-gray-700">
+                            <label class="block text-xs text-gray-400 mb-2 flex items-center gap-1">
+                                <i data-lucide="radar" class="w-3 h-3"></i>
+                                Signaux faibles actifs
+                            </label>
+                            <div class="space-y-1.5">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="sf-budgetaires" class="accent-yellow-500" checked>
+                                    <span class="text-xs text-gray-300">💰 Signaux budgétaires <span class="text-gray-600">(PPI, budget primitif…)</span></span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="sf-reflexion" class="accent-green-500" checked>
+                                    <span class="text-xs text-gray-300">🟢 Signaux de réflexion <span class="text-gray-600">(audit, PCAET, DPE…)</span></span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="sf-consultation" class="accent-red-500" checked>
+                                    <span class="text-xs text-gray-300">🔴 Signaux de consultation <span class="text-gray-600">(AMI, DCE, AO…)</span></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Maturité minimale -->
+                        <div class="pt-2 border-t border-gray-700">
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                <i data-lucide="filter" class="w-3 h-3"></i>
+                                Maturité minimale à afficher
+                            </label>
+                            <select id="maturite_min" class="form-input text-xs">
+                                <option value="reflexion">🟢 Réflexion (tous)</option>
+                                <option value="etude">🟡 Étude (6-12 mois)</option>
+                                <option value="programmation">🟠 Programmation (3-6 mois)</option>
+                                <option value="consultation">🔴 Consultation imminente (&lt; 3 mois)</option>
                             </select>
                         </div>
                     </div>
@@ -658,6 +713,12 @@
                         <option value="">Tous</option>
                         <option value="true">Pertinents</option>
                         <option value="false">Non pertinents</option>
+                    </select>
+                    <select id="doc-maturite-filter" class="form-input w-52 py-1.5 text-sm">
+                        <option value="reflexion">🟢 Toutes maturités</option>
+                        <option value="etude">🟡 Étude+</option>
+                        <option value="programmation">🟠 Programmation+</option>
+                        <option value="consultation">🔴 Consultation imminente</option>
                     </select>
                     <button onclick="chargerDocuments()" class="btn-secondary text-sm py-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Actualiser</button>
                     <button onclick="exporterResultats()" class="btn-secondary text-sm py-1.5"><i data-lucide="download" class="w-4 h-4"></i>Exporter</button>
@@ -1174,6 +1235,16 @@ function remplir(cfg) {
     const si = cfg.seuil_ia ?? 7;
     document.getElementById('seuil_ia').value = si;
     document.getElementById('seuil_ia_label').textContent = si;
+    // Fenêtre temporelle
+    const fen = cfg.fenetre_temporelle ?? 90;
+    setFenetre(fen);
+    // Signaux faibles
+    const sf = cfg.signaux_faibles_actifs || {};
+    document.getElementById('sf-budgetaires').checked = sf.budgetaires !== false;
+    document.getElementById('sf-reflexion').checked   = sf.reflexion   !== false;
+    document.getElementById('sf-consultation').checked = sf.consultation !== false;
+    // Maturité minimale
+    document.getElementById('maturite_min').value = cfg.maturite_min || 'reflexion';
 }
 
 function lireFormulaire() {
@@ -1199,6 +1270,13 @@ function lireFormulaire() {
             profondeur: document.getElementById('profondeur').value,
         },
         seuil_ia: parseInt(document.getElementById('seuil_ia').value),
+        fenetre_temporelle: parseInt(document.getElementById('fenetre_temporelle').value) || 90,
+        signaux_faibles_actifs: {
+            budgetaires:  document.getElementById('sf-budgetaires').checked,
+            reflexion:    document.getElementById('sf-reflexion').checked,
+            consultation: document.getElementById('sf-consultation').checked,
+        },
+        maturite_min: document.getElementById('maturite_min').value,
     };
 }
 
@@ -1378,44 +1456,115 @@ async function chargerDocuments() {
     } catch(e) { document.getElementById('docs-loading').classList.add('hidden'); document.getElementById('docs-empty').classList.remove('hidden'); }
 }
 
+const MATURITE_ORDER = ['reflexion','etude','programmation','consultation'];
+
+function maturiteIndex(m) { return MATURITE_ORDER.indexOf(m ?? 'reflexion'); }
+
+function scoreTooltip(d) {
+    const sd = d.score_details || {};
+    if (!Object.keys(sd).length) return '';
+    const lines = [
+        sd.fraicheur   != null ? `Fraîcheur : ${sd.fraicheur >= 0 ? '+' : ''}${sd.fraicheur} pt` : null,
+        sd.pertinence_kw != null ? `Mots-clés : +${sd.pertinence_kw} pts` : null,
+        sd.signaux_faibles != null ? `Signaux faibles : +${sd.signaux_faibles} pts` : null,
+        sd.source      != null ? `Source : +${sd.source} pt` : null,
+        sd.maturite    != null ? `Maturité : +${sd.maturite} pts` : null,
+        `= Total : ${sd.total ?? d.score_composite ?? '?'}`,
+    ].filter(Boolean).join('&#10;');
+    return `title="${lines}"`;
+}
+
+function maturiteBadge(d) {
+    const m = d.maturite || 'reflexion';
+    const emoji = d.maturite_emoji || '🟢';
+    const label = d.maturite_label || 'Réflexion';
+    const delai = d.maturite_delai || '';
+    const cls = {reflexion:'bg-green-900/30 text-green-400', etude:'bg-yellow-900/30 text-yellow-400',
+                  programmation:'bg-orange-900/30 text-orange-400', consultation:'bg-red-900/40 text-red-400'}[m] || 'bg-gray-700 text-gray-400';
+    return `<span class="text-xs px-1.5 py-0.5 rounded ${cls}" title="${delai}">${emoji} ${label}</span>`;
+}
+
+function sourceBadgeDoc(d) {
+    const src = d.source_type || 'generique';
+    const label = d.source_label || src;
+    const cls = {rss:'bg-blue-900/40 text-blue-300', deliberation:'bg-purple-900/40 text-purple-300',
+                  actualites:'bg-teal-900/40 text-teal-300', bulletin:'bg-indigo-900/40 text-indigo-300',
+                  generique:'bg-gray-700 text-gray-500'}[src] || 'bg-gray-700 text-gray-500';
+    return `<span class="text-xs px-1.5 py-0.5 rounded ${cls}">${label}</span>`;
+}
+
+function signalBadges(d) {
+    const cats = d.categories_signaux || [];
+    const map = {budgetaires:'💰', reflexion:'🟢', consultation:'🔴'};
+    return cats.map(c => `<span class="text-xs px-1 py-0.5 rounded bg-gray-700 text-gray-400">${map[c]||'📌'} ${c}</span>`).join('');
+}
+
 function afficherDocuments(docs) {
     document.getElementById('docs-loading').classList.add('hidden');
-    const search=document.getElementById('doc-search').value.toLowerCase();
-    const scoreF=document.getElementById('doc-score-filter').value;
-    const pertF=document.getElementById('doc-pertinence-filter').value;
-    let filtered=docs.filter(d=>{
-        if(search&&!((d.title||d.nom_fichier||'').toLowerCase().includes(search)||(d.ia_resume||'').toLowerCase().includes(search))) return false;
-        if(scoreF==='high'&&d.ia_score<7) return false;
-        if(scoreF==='medium'&&(d.ia_score<4||d.ia_score>6)) return false;
-        if(scoreF==='low'&&d.ia_score>3) return false;
-        if(pertF==='true'&&!d.ia_pertinent) return false;
-        if(pertF==='false'&&d.ia_pertinent) return false;
+    const search  = document.getElementById('doc-search').value.toLowerCase();
+    const scoreF  = document.getElementById('doc-score-filter').value;
+    const pertF   = document.getElementById('doc-pertinence-filter').value;
+    const maturF  = document.getElementById('doc-maturite-filter')?.value || 'reflexion';
+
+    let filtered = docs.filter(d => {
+        if (search && !((d.title||d.nom_fichier||'').toLowerCase().includes(search)
+            || (d.ia_resume||'').toLowerCase().includes(search)
+            || (d.commune||'').toLowerCase().includes(search))) return false;
+        if (scoreF === 'high'   && d.ia_score < 7) return false;
+        if (scoreF === 'medium' && (d.ia_score < 4 || d.ia_score > 6)) return false;
+        if (scoreF === 'low'    && d.ia_score > 3) return false;
+        if (pertF === 'true'    && !d.ia_pertinent) return false;
+        if (pertF === 'false'   && d.ia_pertinent)  return false;
+        if (maturiteIndex(d.maturite) < maturiteIndex(maturF)) return false;
         return true;
     });
-    const total=filtered.length, pertinents=filtered.filter(d=>d.ia_pertinent).length;
-    const avgScore=total?(filtered.reduce((s,d)=>s+(d.ia_score||0),0)/total).toFixed(1):'0.0';
-    document.getElementById('d-total').textContent=total;
-    document.getElementById('d-pertinents').textContent=pertinents;
-    document.getElementById('d-score').textContent=avgScore;
-    document.getElementById('d-taux').textContent=total?Math.round(pertinents/total*100)+'%':'0%';
-    document.getElementById('docs-stats').classList.toggle('hidden',total===0);
-    if(!total){document.getElementById('docs-empty').classList.remove('hidden');document.getElementById('docs-grid').classList.add('hidden');return;}
+
+    // Tri par score composite décroissant
+    filtered.sort((a, b) => (b.score_composite ?? b.score ?? 0) - (a.score_composite ?? a.score ?? 0));
+
+    const total = filtered.length;
+    const pertinents = filtered.filter(d => d.ia_pertinent).length;
+    const avgScore = total ? (filtered.reduce((s,d) => s + (d.score_composite ?? d.ia_score ?? 0), 0) / total).toFixed(1) : '0.0';
+    document.getElementById('d-total').textContent = total;
+    document.getElementById('d-pertinents').textContent = pertinents;
+    document.getElementById('d-score').textContent = avgScore;
+    document.getElementById('d-taux').textContent = total ? Math.round(pertinents/total*100)+'%' : '0%';
+    document.getElementById('docs-stats').classList.toggle('hidden', total === 0);
+
+    if (!total) {
+        document.getElementById('docs-empty').classList.remove('hidden');
+        document.getElementById('docs-grid').classList.add('hidden');
+        return;
+    }
     document.getElementById('docs-empty').classList.add('hidden');
     document.getElementById('docs-grid').classList.remove('hidden');
-    document.getElementById('docs-grid').innerHTML=filtered.map(d=>{
-        const score=d.ia_score||0,ok=d.ia_pertinent;
-        const sc=score>=7?'text-green-400':score>=4?'text-yellow-400':'text-gray-500';
-        const bc=ok?'border-green-800':'border-gray-700';
+
+    document.getElementById('docs-grid').innerHTML = filtered.map(d => {
+        const iaScore = d.ia_score || 0;
+        const compScore = d.score_composite ?? d.score ?? 0;
+        const ok = d.ia_pertinent;
+        const sc = iaScore >= 7 ? 'text-green-400' : iaScore >= 4 ? 'text-yellow-400' : 'text-gray-500';
+        const bc = ok ? 'border-green-800' : 'border-gray-700';
+        const dateStr = d.date_publication
+            ? new Date(d.date_publication).toLocaleDateString('fr-FR', {day:'2-digit',month:'short',year:'numeric'})
+            : null;
         return `<div class="card-sm border ${bc}">
-            <div class="flex items-start justify-between mb-2">
-                <p class="text-sm font-medium text-gray-200 truncate flex-1 mr-2">${d.title||d.nom_fichier||'Sans titre'}</p>
-                <span class="text-lg font-bold ${sc} shrink-0">${score}/10</span>
+            <div class="flex items-start justify-between mb-1.5 gap-2">
+                <p class="text-sm font-medium text-gray-200 truncate flex-1">${d.commune ? `<span class="text-xs text-gray-500 mr-1">${d.commune}</span>` : ''}${d.title||d.nom_fichier||'Sans titre'}</p>
+                <span class="text-base font-bold ${sc} shrink-0 cursor-help" ${scoreTooltip(d)}>${compScore > 0 ? '+' : ''}${compScore}</span>
             </div>
-            <p class="text-xs text-gray-500 mb-2 truncate">${d.source_url||d.site_url||''}</p>
-            ${d.ia_resume?`<p class="text-xs text-gray-400 mb-2 line-clamp-2">${d.ia_resume}</p>`:''}
-            <div class="flex items-center gap-2 mt-2">
-                <span class="text-xs px-2 py-0.5 rounded-full ${ok?'bg-green-900/50 text-green-400':'bg-gray-700 text-gray-500'}">${ok?'✓ Pertinent':'Non pertinent'}</span>
-                ${d.source_url?`<a href="${d.source_url}" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Voir →</a>`:''}
+            <div class="flex flex-wrap gap-1 mb-1.5">
+                ${maturiteBadge(d)}
+                ${sourceBadgeDoc(d)}
+                ${signalBadges(d)}
+            </div>
+            <p class="text-xs text-gray-500 mb-1.5 truncate">${d.source_url||d.site_url||''}</p>
+            ${d.ia_resume ? `<p class="text-xs text-gray-400 mb-1.5 line-clamp-2">${d.ia_resume}</p>` : ''}
+            <div class="flex items-center gap-2 mt-2 flex-wrap">
+                <span class="text-xs px-1.5 py-0.5 rounded-full ${ok ? 'bg-green-900/50 text-green-400' : 'bg-gray-700 text-gray-500'}">${ok ? '✓ Pertinent' : 'Non pertinent'}</span>
+                ${iaScore > 0 ? `<span class="text-xs text-gray-600">IA: ${iaScore}/10</span>` : ''}
+                ${dateStr ? `<span class="text-xs text-gray-600">📅 ${dateStr}</span>` : ''}
+                ${d.source_url ? `<a href="${d.source_url}" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Voir →</a>` : ''}
             </div>
         </div>`;
     }).join('');
@@ -1423,7 +1572,7 @@ function afficherDocuments(docs) {
 }
 
 function bindDocFilters() {
-    ['doc-search','doc-score-filter','doc-pertinence-filter'].forEach(id=>{
+    ['doc-search','doc-score-filter','doc-pertinence-filter','doc-maturite-filter'].forEach(id=>{
         document.getElementById(id)?.addEventListener('input',()=>afficherDocuments(allDocs));
         document.getElementById(id)?.addEventListener('change',()=>afficherDocuments(allDocs));
     });
@@ -1468,6 +1617,19 @@ function showToast(msg,type) {
     const t=document.getElementById('toast');
     t.textContent=msg;t.className='toast '+type;t.classList.add('show');
     setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+// ── Fenêtre temporelle ────────────────────────────────────────────────────────
+function setFenetre(jours) {
+    document.getElementById('fenetre_temporelle').value = jours;
+    document.querySelectorAll('.fenetre-btn').forEach(b => {
+        const isActive = b.id === `fen-${jours}`;
+        b.classList.toggle('border-red-600', isActive);
+        b.classList.toggle('text-red-400', isActive);
+        b.classList.toggle('bg-red-900/20', isActive);
+        b.classList.toggle('border-gray-600', !isActive);
+        b.classList.toggle('text-gray-400', !isActive);
+    });
 }
 
 // ── Communes par département ──────────────────────────────────────────────────

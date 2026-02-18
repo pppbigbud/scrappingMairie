@@ -10,12 +10,24 @@ import json
 import time
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+try:
+    import feedparser as _feedparser
+    _HAS_FEEDPARSER = True
+except ImportError:
+    _HAS_FEEDPARSER = False
+
+try:
+    from dateutil import parser as _dateutil_parser
+    _HAS_DATEUTIL = True
+except ImportError:
+    _HAS_DATEUTIL = False
 
 # ── Config loader ──────────────────────────────────────────────────────────────
 _ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +62,67 @@ _USER_AGENTS = [
 ]
 
 
+# ── Signaux faibles ────────────────────────────────────────────────────────────
+SIGNAUX_FAIBLES = {
+    "budgetaires": [
+        "budget primitif", "plan pluriannuel d'investissement", "ppi",
+        "programmation budgétaire", "autorisation de programme",
+        "crédit de paiement", "ligne budgétaire énergie",
+        "section d'investissement", "dotation", "enveloppe budgétaire",
+    ],
+    "reflexion": [
+        "étude de faisabilité", "diagnostic énergétique", "audit énergétique",
+        "bilan carbone", "transition énergétique", "plan climat", "pcaet",
+        "rénovation thermique", "sobriété énergétique", "décarbonation",
+        "bilan thermique", "dpe", "performance énergétique",
+    ],
+    "consultation": [
+        "appel à manifestation d'intérêt", "ami énergie", "concertation",
+        "marché de maîtrise d'œuvre", "mission d'étude", "prestataire énergie",
+        "appel d'offres", "dce", "cahier des charges", "consultation entreprise",
+        "marché public travaux",
+    ],
+}
+
+# Niveau de maturité : (label, emoji, bonus_score, délai_estimé)
+MATURITE_NIVEAUX = {
+    "consultation": ("Consultation imminente", "🔴", 4, "< 3 mois"),
+    "programmation": ("Programmation",         "🟠", 3, "3-6 mois"),
+    "etude":         ("Étude",                 "🟡", 2, "6-12 mois"),
+    "reflexion":     ("Réflexion",             "🟢", 1, "12+ mois"),
+}
+
+# Sources prioritaires (ordre de priorité décroissant)
+SOURCE_PRIORITES = {
+    "rss":          ("Flux RSS",        2),
+    "deliberation": ("Délibération",    2),
+    "actualites":   ("Actualités",      1),
+    "bulletin":     ("Bulletin",        1),
+    "accueil":      ("Accueil",         0),
+    "generique":    ("Page générique",  0),
+}
+
+# Patterns URL pour détecter les sections prioritaires
+_SECTION_PATTERNS = {
+    "actualites":   re.compile(r'actual|news|agenda|evenement', re.I),
+    "deliberation": re.compile(r'deliber|conseil.munic|compte.rendu|seance|pv.conseil', re.I),
+    "bulletin":     re.compile(r'bulletin|magazine|journal.munic|lettre.info', re.I),
+    "budget":       re.compile(r'budget|finances|investissement', re.I),
+}
+
+# Patterns date textuels
+_DATE_PATTERNS = [
+    re.compile(r'(?:publié|mis à jour|modifié|date)\s*(?:le|:)?\s*(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})', re.I),
+    re.compile(r'(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})', re.I),
+    re.compile(r'(\d{4})[/\-\.](\d{1,2})[/\-\.](\d{1,2})'),
+]
+
+_MOIS_FR = {
+    'janvier':1,'février':2,'mars':3,'avril':4,'mai':5,'juin':6,
+    'juillet':7,'août':8,'septembre':9,'octobre':10,'novembre':11,'décembre':12,
+}
+
+
 class ScraperCore:
     """
     Scraper générique piloté par search_config.json.
@@ -79,9 +152,18 @@ class ScraperCore:
         self.seuil_ia = get_seuil_ia(self._config_path)
         self.delai = float(self.parametres.get("delai_entre_requetes", 1.5))
         self.timeout = int(self.parametres.get("timeout", 30))
+        cfg = load_config(self._config_path)
+        # Fenêtre temporelle (jours) — défaut 90
+        self.fenetre_jours = int(cfg.get("fenetre_temporelle", 90))
+        # Signaux faibles actifs par catégorie
+        sf_cfg = cfg.get("signaux_faibles_actifs", {"budgetaires": True, "reflexion": True, "consultation": True})
+        self.signaux_actifs = sf_cfg
+        # Maturité minimale à afficher
+        self.maturite_min = cfg.get("maturite_min", "reflexion")
         log.info(
-            "Config chargée — campagne : %s | mots prioritaires : %s",
-            load_config(self._config_path).get("nom_campagne", "?"),
+            "Config chargée — campagne : %s | fenêtre : %dj | mots prioritaires : %s",
+            cfg.get("nom_campagne", "?"),
+            self.fenetre_jours,
             self.mots_cles["prioritaires"][:3],
         )
 
@@ -100,6 +182,258 @@ class ScraperCore:
         session = requests.Session()
         session.headers.update(self._get_headers())
         return session
+
+    # ── Extraction de date ─────────────────────────────────────────────────────
+
+    def extraire_date(self, soup: Optional[BeautifulSoup] = None,
+                      texte: str = "", url: str = "") -> Optional[datetime]:
+        """
+        Tente d'extraire une date de publication depuis :
+        1. Balises HTML <time>, <date>
+        2. Métadonnées OpenGraph og:updated_time / og:published_time / article:published_time
+        3. Patterns textuels "publié le", "mis à jour le"
+        4. Nom de fichier PDF avec date (ex: CR_2024-03-15.pdf)
+        5. dateutil en dernier recours
+        Retourne un datetime UTC naïf ou None.
+        """
+        now = datetime.utcnow()
+
+        # 1. Balises <time>
+        if soup:
+            for tag in soup.find_all(["time", "date"]):
+                dt_attr = tag.get("datetime") or tag.get("content") or tag.get_text(strip=True)
+                parsed = self._parse_date_str(dt_attr)
+                if parsed:
+                    return parsed
+
+            # 2. OpenGraph / meta
+            for prop in ("og:updated_time", "og:published_time", "article:published_time",
+                         "article:modified_time", "DC.date"):
+                meta = soup.find("meta", attrs={"property": prop}) or \
+                       soup.find("meta", attrs={"name": prop})
+                if meta:
+                    parsed = self._parse_date_str(meta.get("content", ""))
+                    if parsed:
+                        return parsed
+
+        # 3. Patterns textuels
+        for pat in _DATE_PATTERNS:
+            m = pat.search(texte)
+            if m:
+                parsed = self._parse_date_match(m)
+                if parsed:
+                    return parsed
+
+        # 4. Nom de fichier PDF
+        fname = os.path.basename(urlparse(url).path)
+        m = re.search(r'(\d{4})[_\-](\d{2})[_\-](\d{2})', fname)
+        if m:
+            try:
+                return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                pass
+
+        return None
+
+    def _parse_date_str(self, s: str) -> Optional[datetime]:
+        """Parse une chaîne de date avec dateutil ou regex."""
+        if not s or len(s) < 6:
+            return None
+        s = s.strip()
+        if _HAS_DATEUTIL:
+            try:
+                dt = _dateutil_parser.parse(s, dayfirst=True)
+                return dt.replace(tzinfo=None)
+            except Exception:
+                pass
+        # Fallback ISO
+        m = re.match(r'(\d{4})-(\d{2})-(\d{2})', s)
+        if m:
+            try:
+                return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                pass
+        return None
+
+    def _parse_date_match(self, m: re.Match) -> Optional[datetime]:
+        """Convertit un match regex de date en datetime."""
+        groups = m.groups()
+        try:
+            if len(groups) == 3 and any(g in _MOIS_FR for g in groups):
+                # Format "15 janvier 2024"
+                jour, mois_str, annee = groups
+                mois = _MOIS_FR.get(mois_str.lower(), 0)
+                if mois:
+                    return datetime(int(annee), mois, int(jour))
+            elif len(groups) == 1:
+                # Format "15/03/2024" ou "2024-03-15"
+                return self._parse_date_str(groups[0])
+            elif len(groups) == 3:
+                # Format "2024/03/15"
+                return datetime(int(groups[0]), int(groups[1]), int(groups[2]))
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def est_dans_fenetre(self, date_pub: Optional[datetime]) -> bool:
+        """Vérifie si une date est dans la fenêtre temporelle configurée."""
+        if date_pub is None:
+            return True  # Pas de date = on garde (bénéfice du doute)
+        cutoff = datetime.utcnow() - timedelta(days=self.fenetre_jours)
+        return date_pub >= cutoff
+
+    # ── Détection RSS ──────────────────────────────────────────────────────────
+
+    def detecter_flux_rss(self, base_url: str, soup: BeautifulSoup,
+                          session: requests.Session) -> List[Dict]:
+        """
+        Détecte et parse les flux RSS du site.
+        Retourne une liste de dicts {titre, url, date, texte, source_type}.
+        """
+        entries = []
+        rss_urls = []
+
+        # Détection via balise <link rel="alternate" type="application/rss+xml">
+        for link in soup.find_all("link", rel="alternate"):
+            t = link.get("type", "")
+            if "rss" in t or "atom" in t or "xml" in t:
+                href = link.get("href", "")
+                if href:
+                    rss_urls.append(urljoin(base_url, href))
+
+        # Patterns URL courants si aucune balise trouvée
+        if not rss_urls:
+            for candidate in ["/feed", "/rss", "/feed.xml", "/rss.xml",
+                               "/spip.php?page=backend", "/index.php?option=com_content&format=feed"]:
+                rss_urls.append(urljoin(base_url, candidate))
+
+        for rss_url in rss_urls[:3]:
+            try:
+                if _HAS_FEEDPARSER:
+                    feed = _feedparser.parse(rss_url)
+                    if not feed.entries:
+                        continue
+                    for entry in feed.entries[:20]:
+                        pub_date = None
+                        if hasattr(entry, "published_parsed") and entry.published_parsed:
+                            try:
+                                pub_date = datetime(*entry.published_parsed[:6])
+                            except Exception:
+                                pass
+                        texte = entry.get("summary", "") or entry.get("title", "")
+                        entries.append({
+                            "titre": entry.get("title", ""),
+                            "url": entry.get("link", rss_url),
+                            "date_publication": pub_date,
+                            "texte": texte,
+                            "source_type": "rss",
+                        })
+                else:
+                    # Sans feedparser : GET brut + parse XML minimal
+                    r = session.get(rss_url, timeout=self.timeout)
+                    if r.status_code == 200 and ("<rss" in r.text or "<feed" in r.text):
+                        rss_soup = BeautifulSoup(r.text, "xml")
+                        for item in rss_soup.find_all(["item", "entry"])[:20]:
+                            titre = (item.find("title") or item.find("name"))
+                            lien  = (item.find("link") or item.find("url"))
+                            desc  = item.find("description") or item.find("summary")
+                            pub   = item.find("pubDate") or item.find("published") or item.find("updated")
+                            pub_date = self._parse_date_str(pub.get_text() if pub else "")
+                            entries.append({
+                                "titre": titre.get_text(strip=True) if titre else "",
+                                "url": lien.get_text(strip=True) if lien else rss_url,
+                                "date_publication": pub_date,
+                                "texte": desc.get_text(strip=True) if desc else "",
+                                "source_type": "rss",
+                            })
+            except Exception:
+                pass
+
+        return entries
+
+    # ── Signaux faibles & maturité ─────────────────────────────────────────────
+
+    def analyser_signaux_faibles(self, texte: str) -> Dict:
+        """
+        Détecte les signaux faibles dans le texte selon les catégories actives.
+        Retourne {signaux_trouves, categories, maturite, bonus_score}.
+        """
+        texte_lower = texte.lower()
+        signaux_trouves: Dict[str, List[str]] = {}
+        categories_trouvees = set()
+
+        for cat, mots in SIGNAUX_FAIBLES.items():
+            if not self.signaux_actifs.get(cat, True):
+                continue
+            trouves = [m for m in mots if m.lower() in texte_lower]
+            if trouves:
+                signaux_trouves[cat] = trouves
+                categories_trouvees.add(cat)
+
+        # Déterminer la maturité (priorité : consultation > budgetaires > reflexion)
+        maturite = "reflexion"
+        if "consultation" in categories_trouvees:
+            maturite = "consultation"
+        elif "budgetaires" in categories_trouvees:
+            maturite = "programmation"
+        elif "reflexion" in categories_trouvees:
+            maturite = "etude"
+
+        bonus = MATURITE_NIVEAUX[maturite][2]
+        return {
+            "signaux_trouves": signaux_trouves,
+            "categories": list(categories_trouvees),
+            "maturite": maturite,
+            "maturite_label": MATURITE_NIVEAUX[maturite][0],
+            "maturite_emoji": MATURITE_NIVEAUX[maturite][1],
+            "maturite_delai": MATURITE_NIVEAUX[maturite][3],
+            "bonus_signaux": len([m for lst in signaux_trouves.values() for m in lst]),
+            "bonus_maturite": bonus,
+        }
+
+    # ── Scoring composite ──────────────────────────────────────────────────────
+
+    def calculer_score_composite(self, analyse_kw: Dict, analyse_sf: Dict,
+                                  date_pub: Optional[datetime],
+                                  source_type: str) -> Dict:
+        """
+        Score composite :
+        - Fraîcheur : -1 pt / semaine d'ancienneté (max 12 semaines)
+        - Pertinence : +3 pts / mot-clé direct, +1 pt / signal faible
+        - Source : +2 si RSS/délibération, +1 si bulletin, 0 sinon
+        - Maturité : +4 consultation, +3 programmation, +2 étude, +1 réflexion
+        """
+        details = {}
+
+        # Fraîcheur
+        score_fraicheur = 0
+        if date_pub:
+            semaines = (datetime.utcnow() - date_pub).days / 7
+            score_fraicheur = -min(int(semaines), 12)
+        details["fraicheur"] = score_fraicheur
+
+        # Pertinence mots-clés directs
+        nb_directs = (len(analyse_kw.get("details", {}).get("prioritaires", [])) * 3
+                      + len(analyse_kw.get("details", {}).get("secondaires", [])) * 1
+                      + len(analyse_kw.get("details", {}).get("budget", [])) * 1)
+        details["pertinence_kw"] = nb_directs
+
+        # Signaux faibles
+        nb_sf = analyse_sf.get("bonus_signaux", 0)
+        details["signaux_faibles"] = nb_sf
+
+        # Source
+        src_bonus = SOURCE_PRIORITES.get(source_type, ("", 0))[1]
+        details["source"] = src_bonus
+
+        # Maturité
+        mat_bonus = analyse_sf.get("bonus_maturite", 1)
+        details["maturite"] = mat_bonus
+
+        total = score_fraicheur + nb_directs + nb_sf + src_bonus + mat_bonus
+        details["total"] = total
+
+        return {"score_composite": total, "score_details": details}
 
     # ── Analyse de texte ───────────────────────────────────────────────────────
 
@@ -173,28 +507,24 @@ class ScraperCore:
         status_callback=None,
     ) -> List[Dict]:
         """
-        Scrape un site municipal et retourne les documents pertinents.
-
-        Args:
-            url: URL de base du site municipal.
-            commune: Nom de la commune.
-            dept: Code département (ex: "63").
-            status_callback: Callable(str) pour les messages de progression.
-
-        Returns:
-            Liste de dicts représentant les documents trouvés et analysés.
+        Scrape un site municipal avec priorisation des sources fraîches :
+        1. Flux RSS  2. Actualités  3. Délibérations  4. Bulletins PDF  5. Accueil
+        Filtre par fenêtre temporelle, détecte signaux faibles, calcule score composite.
         """
-        self._reload_config()  # Recharge à chaque appel pour refléter les changements
+        self._reload_config()
 
         def _log(msg: str, level: str = "info") -> None:
             getattr(log, level)(msg)
             if status_callback:
                 status_callback(msg)
 
-        _log(f"Scraping {commune} ({url})")
+        _log(f"🔍 Scraping {commune} ({url}) | fenêtre {self.fenetre_jours}j")
         session = self._make_session()
         found: List[Dict] = []
+        seen_urls: set = set()
+        base_netloc = urlparse(url).netloc
 
+        # ── Étape 0 : Chargement page d'accueil ───────────────────────────────
         try:
             time.sleep(random.uniform(self.delai * 0.5, self.delai * 1.5))
             response = session.get(url, timeout=self.timeout)
@@ -203,97 +533,169 @@ class ScraperCore:
             _log(f"Erreur connexion {url} : {exc}", "warning")
             return []
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        all_links = soup.find_all("a", href=True)
-        _log(f"{len(all_links)} liens trouvés sur la page principale")
+        home_soup = BeautifulSoup(response.text, "html.parser")
 
-        # Sections prioritaires à explorer
-        sections = self._get_sections_prioritaires(url, soup)
-        for section_url in sections:
+        # ── Étape 1 : Flux RSS (priorité maximale) ────────────────────────────
+        rss_entries = self.detecter_flux_rss(url, home_soup, session)
+        if rss_entries:
+            _log(f"📡 RSS : {len(rss_entries)} entrées trouvées")
+        for entry in rss_entries:
+            if not self.est_dans_fenetre(entry.get("date_publication")):
+                continue
+            texte = entry.get("texte", "") + " " + entry.get("titre", "")
+            analyse = self.analyser_texte(texte)
+            if not analyse["pertinent"]:
+                continue
+            sf = self.analyser_signaux_faibles(texte)
+            sc = self.calculer_score_composite(analyse, sf, entry.get("date_publication"), "rss")
+            doc = self._build_result(
+                entry.get("titre", "rss_entry")[:80],
+                entry.get("url", url), url, commune, dept, texte, analyse,
+                source_type="rss",
+                date_pub=entry.get("date_publication"),
+                signaux_faibles=sf,
+                score_composite=sc,
+            )
+            found.append(doc)
+            seen_urls.add(entry.get("url", ""))
+
+        # ── Étape 2 : Sources prioritaires (actualités, délibérations, bulletins) ──
+        sources_prioritaires = self._get_sources_prioritaires(url, home_soup, base_netloc)
+        for section_url, section_type in sources_prioritaires:
+            if section_url in seen_urls:
+                continue
             try:
-                time.sleep(random.uniform(0.5, 1.5))
+                time.sleep(random.uniform(0.5, 1.2))
                 r = session.get(section_url, timeout=self.timeout)
-                if r.status_code == 200:
-                    sub_soup = BeautifulSoup(r.text, "html.parser")
-                    all_links.extend(sub_soup.find_all("a", href=True))
-                    _log(f"Section explorée : {section_url}")
+                if r.status_code != 200:
+                    continue
+                sub_soup = BeautifulSoup(r.text, "html.parser")
+                _log(f"📂 Section {section_type} : {section_url}")
+
+                # Liens documents dans cette section
+                for link in sub_soup.find_all("a", href=True):
+                    href = link.get("href", "")
+                    full_url = urljoin(url, href)
+                    if full_url in seen_urls:
+                        continue
+                    if urlparse(full_url).netloc != base_netloc:
+                        continue
+                    seen_urls.add(full_url)
+
+                    if self._is_document(full_url):
+                        # Filtre date sur nom de fichier avant téléchargement
+                        date_fname = self.extraire_date(url=full_url)
+                        if not self.est_dans_fenetre(date_fname):
+                            continue
+                        texte = self._extraire_texte_document(full_url, session, _log)
+                        if not texte:
+                            continue
+                        analyse = self.analyser_texte(texte)
+                        if not analyse["pertinent"]:
+                            continue
+                        page_soup = None
+                        date_pub = self.extraire_date(soup=page_soup, texte=texte, url=full_url)
+                        if not self.est_dans_fenetre(date_pub):
+                            continue
+                        sf = self.analyser_signaux_faibles(texte)
+                        sc = self.calculer_score_composite(analyse, sf, date_pub, section_type)
+                        doc = self._build_result(
+                            os.path.basename(urlparse(full_url).path) or full_url,
+                            full_url, url, commune, dept, texte, analyse,
+                            source_type=section_type,
+                            date_pub=date_pub,
+                            signaux_faibles=sf,
+                            score_composite=sc,
+                        )
+                        found.append(doc)
+                        _log(f"📄 {doc['nom_fichier'][:50]} | score={sc['score_composite']} | {sf['maturite_emoji']} {sf['maturite_label']}")
+
             except requests.RequestException:
                 pass
 
-        # Traitement des liens
-        seen_urls = set()
-        for link in all_links:
-            href = link.get("href", "")
-            if not href:
-                continue
-
-            full_url = urljoin(url, href)
-
-            # Éviter les doublons et liens externes
+        # ── Étape 3 : Pages HTML pertinentes de la section ────────────────────
+        for link in home_soup.find_all("a", href=True):
+            full_url = urljoin(url, link.get("href", ""))
             if full_url in seen_urls:
                 continue
-            if urlparse(full_url).netloc != urlparse(url).netloc:
+            if urlparse(full_url).netloc != base_netloc:
+                continue
+            if not self._is_relevant_html(full_url):
                 continue
             seen_urls.add(full_url)
+            try:
+                time.sleep(random.uniform(0.5, 1.0))
+                hr = session.get(full_url, timeout=self.timeout)
+                if hr.status_code != 200:
+                    continue
+                page_soup = BeautifulSoup(hr.text, "html.parser")
+                texte = self._extraire_texte_html(hr.text)
+                if not texte or len(texte) < 300:
+                    continue
+                analyse = self.analyser_texte(texte)
+                if not analyse["pertinent"]:
+                    continue
+                date_pub = self.extraire_date(soup=page_soup, texte=texte, url=full_url)
+                if not self.est_dans_fenetre(date_pub):
+                    continue
+                sf = self.analyser_signaux_faibles(texte)
+                sc = self.calculer_score_composite(analyse, sf, date_pub, "generique")
+                filename = os.path.basename(urlparse(full_url).path) or "page.html"
+                doc = self._build_result(
+                    filename, full_url, url, commune, dept, texte, analyse,
+                    source_type="generique",
+                    date_pub=date_pub,
+                    signaux_faibles=sf,
+                    score_composite=sc,
+                )
+                doc["document_type"] = "html"
+                found.append(doc)
+            except requests.RequestException:
+                pass
 
-            # Documents (PDF, DOC…)
-            if self._is_document(full_url):
-                filename = os.path.basename(urlparse(full_url).path) or full_url
-                texte = self._extraire_texte_document(full_url, session, _log)
-                if texte:
-                    analyse = self.analyser_texte(texte)
-                    doc = self._build_result(
-                        filename, full_url, url, commune, dept, texte, analyse
-                    )
-                    found.append(doc)
-                    _log(
-                        f"Document : {filename[:50]} | score={analyse['score']} "
-                        f"| pertinent={analyse['pertinent']}"
-                    )
-
-            # Pages HTML pertinentes
-            elif self._is_relevant_html(full_url):
-                try:
-                    time.sleep(random.uniform(0.5, 1.0))
-                    hr = session.get(full_url, timeout=self.timeout)
-                    if hr.status_code == 200:
-                        texte = self._extraire_texte_html(hr.text)
-                        if texte and len(texte) > 300:
-                            analyse = self.analyser_texte(texte)
-                            filename = (
-                                os.path.basename(urlparse(full_url).path) or "page.html"
-                            )
-                            doc = self._build_result(
-                                filename, full_url, url, commune, dept, texte, analyse
-                            )
-                            doc["document_type"] = "html"
-                            found.append(doc)
-                except requests.RequestException:
-                    pass
-
-        pertinents = self.filtrer_resultats(found)
+        # Tri par score composite décroissant
+        found.sort(key=lambda r: r.get("score_composite", 0), reverse=True)
+        pertinents = [r for r in found if r.get("pertinent")]
         _log(
-            f"Terminé {commune} : {len(found)} docs trouvés, "
-            f"{len(pertinents)} pertinents (seuil={self.seuil_confiance})"
+            f"✅ Terminé {commune} : {len(found)} docs | {len(pertinents)} pertinents "
+            f"| fenêtre {self.fenetre_jours}j"
         )
         return found
 
     # ── Helpers privés ─────────────────────────────────────────────────────────
 
-    def _get_sections_prioritaires(self, base_url: str, soup: BeautifulSoup) -> List[str]:
-        """Retourne les URLs des sections à explorer en priorité."""
-        keywords = [
-            "deliberation", "conseil", "bulletin", "document", "publication",
-            "energie", "transition", "projet", "marche", "budget",
-        ]
-        sections = []
+    def _get_sources_prioritaires(self, base_url: str, soup: BeautifulSoup,
+                                   base_netloc: str) -> List[Tuple[str, str]]:
+        """
+        Retourne les URLs des sections à explorer, avec leur type, dans l'ordre :
+        actualités > délibérations > bulletins > budget > générique.
+        """
+        results: List[Tuple[str, str]] = []
+        seen = set()
+        priority_order = ["actualites", "deliberation", "bulletin", "budget"]
+
+        # Construire un dict type -> liste d'URLs
+        typed: Dict[str, List[str]] = {k: [] for k in priority_order}
+
         for link in soup.find_all("a", href=True):
-            href = link.get("href", "").lower()
-            if any(kw in href for kw in keywords):
-                full = urljoin(base_url, link["href"])
-                if urlparse(full).netloc == urlparse(base_url).netloc:
-                    sections.append(full)
-        return list(dict.fromkeys(sections))[:15]  # dédoublonnage, max 15
+            href = link.get("href", "")
+            full = urljoin(base_url, href)
+            if urlparse(full).netloc != base_netloc:
+                continue
+            if full in seen:
+                continue
+            for stype, pat in _SECTION_PATTERNS.items():
+                if pat.search(href) or pat.search(link.get_text()):
+                    if stype in typed:
+                        typed[stype].append(full)
+                        seen.add(full)
+                    break
+
+        for stype in priority_order:
+            for u in list(dict.fromkeys(typed[stype]))[:5]:
+                results.append((u, stype))
+
+        return results
 
     def _is_document(self, url: str) -> bool:
         url_lower = url.lower()
@@ -352,7 +754,14 @@ class ScraperCore:
         dept: Optional[str],
         texte: str,
         analyse: Dict,
+        source_type: str = "generique",
+        date_pub: Optional[datetime] = None,
+        signaux_faibles: Optional[Dict] = None,
+        score_composite: Optional[Dict] = None,
     ) -> Dict:
+        sf = signaux_faibles or {}
+        sc = score_composite or {"score_composite": analyse["score"], "score_details": {}}
+        src_label = SOURCE_PRIORITES.get(source_type, ("Page générique", 0))[0]
         return {
             "nom_fichier": filename,
             "source_url": source_url,
@@ -360,11 +769,22 @@ class ScraperCore:
             "commune": commune,
             "departement": dept,
             "date_detection": datetime.now().isoformat(),
+            "date_publication": date_pub.isoformat() if date_pub else None,
             "texte": texte[:50000],
             "score": analyse["score"],
+            "score_composite": sc["score_composite"],
+            "score_details": sc["score_details"],
             "pertinent": analyse["pertinent"],
             "mots_trouves": analyse["mots_trouves"],
             "details_mots": analyse["details"],
+            "source_type": source_type,
+            "source_label": src_label,
+            "signaux_faibles": sf.get("signaux_trouves", {}),
+            "categories_signaux": sf.get("categories", []),
+            "maturite": sf.get("maturite", "reflexion"),
+            "maturite_label": sf.get("maturite_label", "Réflexion"),
+            "maturite_emoji": sf.get("maturite_emoji", "🟢"),
+            "maturite_delai": sf.get("maturite_delai", "12+ mois"),
             "ia_pertinent": False,
             "ia_score": 0,
             "ia_resume": "",
