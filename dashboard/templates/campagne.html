@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campagne — Hardscrapper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script>
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { primary: '#dc2626' } } } }
+    </script>
+    <style>
+        .nav-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:.75rem .5rem;color:#9ca3af;border-radius:.5rem;transition:all .2s;cursor:pointer;background:none;border:none;text-decoration:none}
+        .nav-btn:hover{background:#374151;color:#f3f4f6}.nav-btn.active{background:#374151;color:#dc2626}
+        .card{background:#1f2937;border:1px solid #374151;border-radius:.75rem;padding:1.5rem}
+        .card-sm{background:#1f2937;border:1px solid #374151;border-radius:.75rem;padding:1rem}
+        .btn-primary{background:#dc2626;color:white;padding:.5rem 1.25rem;border-radius:.5rem;font-weight:600;transition:all .2s;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem}
+        .btn-primary:hover{background:#b91c1c}.btn-primary:disabled{background:#6b7280;cursor:not-allowed}
+        .btn-secondary{background:#374151;color:#f3f4f6;padding:.5rem 1.25rem;border-radius:.5rem;font-weight:500;transition:all .2s;border:1px solid #4b5563;cursor:pointer;display:inline-flex;align-items:center;gap:.5rem}
+        .btn-secondary:hover{background:#4b5563}
+        .form-input{background:#111827;border:1px solid #374151;color:#f3f4f6;border-radius:.5rem;padding:.5rem .75rem;width:100%;transition:border-color .2s}
+        .form-input:focus{outline:none;border-color:#dc2626}
+        .form-textarea{background:#111827;border:1px solid #374151;color:#f3f4f6;border-radius:.5rem;padding:.75rem;width:100%;resize:vertical;font-family:monospace;font-size:.875rem;transition:border-color .2s}
+        .form-textarea:focus{outline:none;border-color:#dc2626}
+        .preset-btn{background:#111827;border:1px solid #374151;color:#9ca3af;padding:.4rem .75rem;border-radius:.5rem;font-size:.8rem;cursor:pointer;transition:all .2s;white-space:nowrap}
+        .preset-btn:hover{border-color:#dc2626;color:#f3f4f6}.preset-btn.active{border-color:#dc2626;color:#dc2626;background:#1f2937}
+        .slider{-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:#374151;outline:none;width:100%}
+        .slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#dc2626;cursor:pointer}
+        .toast{position:fixed;bottom:1.5rem;right:1.5rem;padding:.875rem 1.25rem;border-radius:.5rem;font-weight:500;z-index:9999;transform:translateY(100px);opacity:0;transition:all .3s}
+        .toast.show{transform:translateY(0);opacity:1}.toast.success{background:#16a34a;color:white}.toast.error{background:#dc2626;color:white}
+        .tab-btn{padding:.5rem 1rem;border-radius:.5rem .5rem 0 0;font-size:.875rem;font-weight:500;cursor:pointer;border:none;transition:all .2s}
+        .tab-btn.active{background:#1f2937;color:#f3f4f6;border-bottom:2px solid #dc2626}
+        .tab-btn:not(.active){background:#111827;color:#6b7280}.tab-btn:not(.active):hover{color:#9ca3af}
+        .stat-card{background:#111827;border:1px solid #374151;border-radius:.5rem;padding:.875rem;text-align:center}
+        .mode-btn{padding:.5rem 1rem;border-radius:.5rem;font-size:.875rem;cursor:pointer;border:1px solid #374151;background:#111827;color:#9ca3af;transition:all .2s}
+        .mode-btn.active{border-color:#dc2626;color:#dc2626;background:#1f2937}
+        .log-entry{font-family:monospace;font-size:.8rem;padding:.15rem 0;border-bottom:1px solid #1f2937}
+        /* Bouton aide */
+        .help-btn{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#374151;color:#9ca3af;font-size:10px;font-weight:700;cursor:pointer;border:none;margin-left:4px;flex-shrink:0;transition:all .15s;line-height:1}
+        .help-btn:hover{background:#dc2626;color:white}
+        /* Modal aide */
+        .help-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+        .help-modal-overlay.open{opacity:1;pointer-events:all}
+        .help-modal{background:#1f2937;border:1px solid #374151;border-radius:.75rem;padding:1.5rem;max-width:480px;width:90%;transform:scale(.95);transition:transform .2s;max-height:80vh;overflow-y:auto}
+        .help-modal-overlay.open .help-modal{transform:scale(1)}
+        .help-tag{display:inline-block;padding:.2rem .6rem;border-radius:.25rem;font-size:.75rem;font-weight:600;margin:.15rem}
+        /* Carte D3 */
+        #carte-svg path{cursor:pointer;transition:fill .15s,stroke .15s}
+        #carte-svg path:hover{opacity:.85}
+        #carte-svg path.selected{stroke:#ef4444;stroke-width:1.5px}
+        #carte-tooltip-d3{position:absolute;background:#111827;border:1px solid #374151;color:#f3f4f6;padding:.35rem .65rem;border-radius:.375rem;font-size:.75rem;pointer-events:none;z-index:100;white-space:nowrap}
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+<!-- Modal aide -->
+<div id="help-overlay" class="help-modal-overlay" onclick="fermerAide(event)">
+    <div class="help-modal">
+        <div class="flex items-start justify-between mb-3">
+            <h3 id="help-title" class="text-base font-bold text-white"></h3>
+            <button onclick="fermerAide()" class="text-gray-500 hover:text-white ml-4 text-lg leading-none">&times;</button>
+        </div>
+        <div id="help-body" class="text-sm text-gray-300 space-y-2"></div>
+    </div>
+</div>
+
+<!-- Sidebar -->
+<aside class="fixed inset-y-0 left-0 z-50 w-16 bg-gray-800 border-r border-gray-700 flex flex-col">
+    <div class="flex items-center justify-center h-16 border-b border-gray-700">
+        <div class="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
+            <i data-lucide="hammer" class="w-5 h-5 text-white"></i>
+        </div>
+    </div>
+    <nav class="flex-1 px-2 py-4 space-y-2">
+        <a href="/campagne" class="nav-btn active" title="Campagne & Scraping">
+            <i data-lucide="crosshair" class="w-5 h-5"></i>
+            <span class="text-xs mt-1">Campagne</span>
+        </a>
+        <button class="nav-btn" title="Résultats" onclick="showTab('resultats')">
+            <i data-lucide="bar-chart-2" class="w-5 h-5"></i>
+            <span class="text-xs mt-1">Résultats</span>
+        </button>
+        <button class="nav-btn" title="Documents" onclick="showTab('documents')">
+            <i data-lucide="file-text" class="w-5 h-5"></i>
+            <span class="text-xs mt-1">Documents</span>
+        </button>
+    </nav>
+    <div class="p-2 border-t border-gray-700 text-center"><span class="text-xs text-gray-600">v1.0</span></div>
+</aside>
+
+<!-- Main -->
+<main class="ml-16 min-h-screen">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <i data-lucide="crosshair" class="w-5 h-5 text-red-500"></i>
+            <h1 class="text-lg font-bold text-white">Hardscrapper</h1>
+            <span class="text-gray-500 text-sm">|</span>
+            <span id="header-campagne-nom" class="text-sm text-red-400 font-medium">chargement...</span>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="sauvegarder()" class="btn-secondary text-sm py-1.5">
+                <i data-lucide="save" class="w-4 h-4"></i>Sauvegarder config
+            </button>
+            <button onclick="lancerScraping()" id="btn-lancer" class="btn-primary text-sm py-1.5">
+                <i data-lucide="play" class="w-4 h-4"></i>Lancer la recherche
+            </button>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="bg-gray-900 border-b border-gray-700 px-6 flex gap-1 pt-2">
+        <button class="tab-btn active" id="tab-config" onclick="showTab('config')">
+            <i data-lucide="settings-2" class="w-4 h-4 inline mr-1"></i>Configuration
+        </button>
+        <button class="tab-btn" id="tab-lancement" onclick="showTab('lancement')">
+            <i data-lucide="globe" class="w-4 h-4 inline mr-1"></i>Lancement
+        </button>
+        <button class="tab-btn" id="tab-resultats" onclick="showTab('resultats')">
+            <i data-lucide="bar-chart-2" class="w-4 h-4 inline mr-1"></i>Résultats
+        </button>
+        <button class="tab-btn" id="tab-documents" onclick="showTab('documents')">
+            <i data-lucide="file-text" class="w-4 h-4 inline mr-1"></i>Documents
+        </button>
+    </div>
+
+    <div class="p-6">
+    <!-- ═══════════════════════════════════════════════════════ TAB CONFIG -->
+    <div id="pane-config" class="tab-pane">
+        <!-- Presets -->
+        <div class="card mb-5">
+            <div class="flex items-center gap-2 mb-3">
+                <i data-lucide="zap" class="w-4 h-4 text-red-500"></i>
+                <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Presets prédéfinis</span>
+                <button class="help-btn" onclick="aide('presets')">?</button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button class="preset-btn active" onclick="appliquerPreset('chaufferies_biomasse',this)">🔥 Chaufferies Biomasse</button>
+                <button class="preset-btn" onclick="appliquerPreset('panneaux_solaires',this)">☀️ Panneaux Solaires</button>
+                <button class="preset-btn" onclick="appliquerPreset('pompes_chaleur',this)">♨️ Pompes à Chaleur</button>
+                <button class="preset-btn" onclick="appliquerPreset('bornes_recharge',this)">⚡ Bornes Recharge VE</button>
+                <button class="preset-btn" onclick="appliquerPreset('renovation_batiments',this)">🏗️ Rénovation Bâtiments</button>
+                <button class="preset-btn" onclick="appliquerPreset('custom',this)">✏️ Personnalisé</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-5">
+            <!-- Colonne 1+2 : Infos + Mots-clés -->
+            <div class="col-span-2 space-y-5">
+                <!-- Infos campagne -->
+                <div class="card">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="info" class="w-4 h-4 text-red-500"></i>
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Informations</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center">Nom de la campagne</label>
+                            <input type="text" id="nom_campagne" class="form-input" placeholder="Ex: Chaufferies Biomasse AURA 2026">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Date de début de recherche</label>
+                            <input type="date" id="date_debut_recherche" class="form-input">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs text-gray-400 mb-1">Description</label>
+                            <input type="text" id="description" class="form-input" placeholder="Objectif de la campagne">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mots-clés -->
+                <div class="card">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="tag" class="w-4 h-4 text-red-500"></i>
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Mots-clés de détection</span>
+                        <button class="help-btn" onclick="aide('mots_cles')">?</button>
+                    </div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-red-400 uppercase flex items-center gap-1">
+                                    Prioritaires
+                                    <button class="help-btn" onclick="aide('mots_prioritaires')">?</button>
+                                </span>
+                                <span class="text-xs bg-red-900/40 text-red-400 px-2 py-0.5 rounded">× 2 pts</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Un mot par ligne</p>
+                            <textarea id="mots_prioritaires" class="form-textarea" rows="8" placeholder="chaufferie&#10;biomasse&#10;réseau chaleur"></textarea>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-yellow-400 uppercase flex items-center gap-1">
+                                    Secondaires
+                                    <button class="help-btn" onclick="aide('mots_secondaires')">?</button>
+                                </span>
+                                <span class="text-xs bg-yellow-900/40 text-yellow-400 px-2 py-0.5 rounded">× 1 pt</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Un mot par ligne</p>
+                            <textarea id="mots_secondaires" class="form-textarea" rows="8" placeholder="chauffage bois&#10;granulés&#10;plaquettes"></textarea>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-semibold text-green-400 uppercase flex items-center gap-1">
+                                    Budget
+                                    <button class="help-btn" onclick="aide('mots_budget')">?</button>
+                                </span>
+                                <span class="text-xs bg-green-900/40 text-green-400 px-2 py-0.5 rounded">× 1 pt</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Un mot par ligne</p>
+                            <textarea id="mots_budget" class="form-textarea" rows="8" placeholder="budget&#10;subvention&#10;ademe"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Colonne 3 : Paramètres -->
+            <div class="space-y-5">
+                <!-- Seuils -->
+                <div class="card">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="sliders" class="w-4 h-4 text-red-500"></i>
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Seuils</span>
+                        <button class="help-btn" onclick="aide('seuils')">?</button>
+                    </div>
+                    <div class="space-y-5">
+                        <div>
+                            <div class="flex justify-between mb-1 items-center">
+                                <label class="text-xs text-gray-400 flex items-center gap-1">
+                                    Score minimum scraping
+                                    <button class="help-btn" onclick="aide('seuil_scraping')">?</button>
+                                </label>
+                                <span id="seuil_label" class="text-red-400 font-bold">2</span>
+                            </div>
+                            <input type="range" id="seuil_confiance" class="slider" min="1" max="5" value="2"
+                                oninput="document.getElementById('seuil_label').textContent=this.value">
+                            <div class="flex justify-between text-xs text-gray-600 mt-1"><span>Large</span><span>Strict</span></div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between mb-1 items-center">
+                                <label class="text-xs text-gray-400 flex items-center gap-1">
+                                    Score IA minimum (/10)
+                                    <button class="help-btn" onclick="aide('seuil_ia')">?</button>
+                                </label>
+                                <span id="seuil_ia_label" class="text-red-400 font-bold">7</span>
+                            </div>
+                            <input type="range" id="seuil_ia" class="slider" min="1" max="10" value="7"
+                                oninput="document.getElementById('seuil_ia_label').textContent=this.value">
+                            <div class="flex justify-between text-xs text-gray-600 mt-1"><span>Tout</span><span>Parfait</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paramètres scraping -->
+                <div class="card">
+                    <div class="flex items-center gap-2 mb-4">
+                        <i data-lucide="settings-2" class="w-4 h-4 text-red-500"></i>
+                        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Scraping</span>
+                        <button class="help-btn" onclick="aide('params_scraping')">?</button>
+                    </div>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                Délai entre requêtes (s)
+                                <button class="help-btn" onclick="aide('delai')">?</button>
+                            </label>
+                            <input type="number" id="delai_requetes" class="form-input" value="1.5" min="0.5" max="10" step="0.5">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                Timeout (s)
+                                <button class="help-btn" onclick="aide('timeout')">?</button>
+                            </label>
+                            <input type="number" id="timeout" class="form-input" value="30" min="5" max="120" step="5">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                Profondeur
+                                <button class="help-btn" onclick="aide('profondeur')">?</button>
+                            </label>
+                            <select id="profondeur" class="form-input">
+                                <option value="leger">Léger — page principale</option>
+                                <option value="moyen" selected>Moyen — sections principales</option>
+                                <option value="profond">Profond — toutes sous-pages</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="resetConfig()" class="btn-secondary w-full justify-center text-sm">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>Réinitialiser par défaut
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ TAB LANCEMENT -->
+    <div id="pane-lancement" class="tab-pane hidden">
+        <div class="grid grid-cols-2 gap-5">
+            <!-- Cibles -->
+            <div class="card">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="globe" class="w-4 h-4 text-red-500"></i>
+                    <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Sites à scraper</span>
+                    <button class="help-btn" onclick="aide('sites_scraper')">?</button>
+                </div>
+                <div class="flex gap-2 mb-4">
+                    <button class="mode-btn active" id="mode-single" onclick="setMode('single')">
+                        <i data-lucide="link" class="w-4 h-4 inline mr-1"></i>URLs manuelles
+                    </button>
+                    <button class="mode-btn" id="mode-dept" onclick="setMode('department')">
+                        <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>Par département
+                    </button>
+                </div>
+
+                <!-- Mode URL -->
+                <div id="mode-single-panel">
+                    <div class="flex gap-2 mb-2">
+                        <button onclick="chargerCommunesAuvergne()" class="btn-secondary text-xs py-1">
+                            <i data-lucide="mountain" class="w-3 h-3"></i>Charger AURA
+                        </button>
+                        <div class="flex items-center gap-1 text-xs text-gray-400">
+                            Pop. min :
+                            <input type="number" id="auvergne-min-pop" value="5000" min="0" step="1000"
+                                class="w-20 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-white text-xs">
+                        </div>
+                    </div>
+                    <label class="block text-xs text-gray-400 mb-1">URLs (une par ligne)</label>
+                    <textarea id="urls-input" class="form-textarea" rows="10"
+                        placeholder="https://www.thiers.fr&#10;https://www.ambert.fr"></textarea>
+                </div>
+
+                <!-- Mode département — Carte D3 -->
+                <div id="mode-dept-panel" class="hidden">
+                    <div class="flex gap-3 mb-3 items-end flex-wrap">
+                        <div class="flex-1 min-w-32">
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                Population minimale
+                                <button class="help-btn" onclick="aide('population_min')">?</button>
+                            </label>
+                            <input type="number" id="dept-min-pop" class="form-input" value="5000" min="0" step="1000">
+                        </div>
+                        <div class="flex-1 min-w-40">
+                            <label class="block text-xs text-gray-400 mb-1 flex items-center gap-1">
+                                Sélection rapide par région
+                                <button class="help-btn" onclick="aide('regions')">?</button>
+                            </label>
+                            <select id="region-select" class="form-input" onchange="selectionnerRegion(this.value)">
+                                <option value="">— Choisir une région —</option>
+                                <option value="aura">Auvergne-Rhône-Alpes</option>
+                                <option value="idf">Île-de-France</option>
+                                <option value="occ">Occitanie</option>
+                                <option value="naq">Nouvelle-Aquitaine</option>
+                                <option value="bfc">Bourgogne-Franche-Comté</option>
+                                <option value="paca">PACA</option>
+                                <option value="bre">Bretagne</option>
+                                <option value="nor">Normandie</option>
+                                <option value="hdf">Hauts-de-France</option>
+                                <option value="ges">Grand Est</option>
+                                <option value="pdl">Pays de la Loire</option>
+                                <option value="cvl">Centre-Val de Loire</option>
+                            </select>
+                        </div>
+                        <button onclick="deselectionnerTout()" class="btn-secondary text-xs py-1.5 shrink-0">
+                            <i data-lucide="x" class="w-3 h-3"></i>Tout désélectionner
+                        </button>
+                    </div>
+
+                    <!-- Carte D3 pleine largeur + liste en overlay -->
+                    <div class="relative bg-gray-900 rounded-lg border border-gray-700 overflow-hidden" style="height:520px;" id="carte-container">
+                        <svg id="carte-svg" style="width:100%;height:100%;"></svg>
+                        <div id="carte-tooltip-d3" class="hidden"></div>
+                        <!-- Panneau sélection en overlay -->
+                        <div class="absolute top-2 right-2 bg-gray-800/90 backdrop-blur-sm rounded-lg border border-gray-700 p-2" style="width:160px;">
+                            <div class="text-xs text-gray-400 font-semibold mb-1">Sélectionnés</div>
+                            <div id="depts-selectionnes" class="space-y-1 overflow-y-auto mb-2" style="max-height:200px;"></div>
+                            <div class="pt-1 border-t border-gray-700">
+                                <div class="text-xs text-gray-500">Total</div>
+                                <div class="text-xl font-bold text-red-400" id="nb-depts-sel">0</div>
+                                <div class="text-xs text-gray-500">département(s)</div>
+                            </div>
+                            <div class="mt-2 space-y-1 text-xs text-gray-600">
+                                <div><span class="inline-block w-2.5 h-2.5 rounded mr-1" style="background:#dc2626"></span>Sélectionné</div>
+                                <div><span class="inline-block w-2.5 h-2.5 rounded mr-1" style="background:#374151"></span>Non sélectionné</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-600 mt-2">
+                        <i data-lucide="info" class="w-3 h-3 inline"></i>
+                        Cliquez sur un département pour le sélectionner/désélectionner.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Résumé + Lancement + Logs -->
+            <div class="space-y-4">
+                <div class="card">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-red-500"></i>
+                            <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Campagne active</span>
+                        </div>
+                        <button onclick="showTab('config')" class="text-xs text-red-400 hover:text-red-300">Modifier →</button>
+                    </div>
+                    <p class="text-white font-medium mb-2" id="resume-nom">—</p>
+                    <div class="space-y-2">
+                        <div><span class="text-xs text-gray-500">Prioritaires :</span>
+                            <div class="flex flex-wrap gap-1 mt-1" id="resume-prioritaires"></div></div>
+                        <div><span class="text-xs text-gray-500">Secondaires :</span>
+                            <div class="flex flex-wrap gap-1 mt-1" id="resume-secondaires"></div></div>
+                        <div class="grid grid-cols-3 gap-2 mt-3">
+                            <div class="stat-card"><div class="text-xs text-gray-500">Seuil scraping</div><div class="text-lg font-bold text-red-400" id="resume-seuil">2</div></div>
+                            <div class="stat-card"><div class="text-xs text-gray-500">Seuil IA</div><div class="text-lg font-bold text-red-400" id="resume-seuil-ia">7</div></div>
+                            <div class="stat-card"><div class="text-xs text-gray-500">Profondeur</div><div class="text-sm font-bold text-red-400" id="resume-profondeur">moyen</div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="lancerScraping()" id="btn-lancer-2" class="btn-primary w-full justify-center py-3 text-base">
+                    <i data-lucide="play" class="w-5 h-5"></i>Lancer la recherche
+                </button>
+                <button onclick="stopScraping()" id="btn-stop" class="btn-secondary w-full justify-center hidden">
+                    <i data-lucide="square" class="w-4 h-4"></i>Arrêter
+                </button>
+
+                <div class="card">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                            <i data-lucide="terminal" class="w-4 h-4 text-red-500"></i>Logs
+                        </span>
+                        <button onclick="clearLogs()" class="text-xs text-gray-500 hover:text-gray-300">Effacer</button>
+                    </div>
+                    <div id="logs-container" class="bg-gray-900 rounded border border-gray-700 p-3 h-48 overflow-y-auto">
+                        <div class="log-entry text-gray-500">En attente de démarrage...</div>
+                    </div>
+                    <div class="mt-2">
+                        <div class="h-1.5 bg-gray-700 rounded overflow-hidden">
+                            <div id="progress-bar" class="h-full bg-red-600 transition-all duration-500" style="width:0%"></div>
+                        </div>
+                        <p id="progress-text" class="text-xs text-gray-500 mt-1 truncate"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ TAB RÉSULTATS -->
+    <div id="pane-resultats" class="tab-pane hidden">
+        <div class="grid grid-cols-4 gap-4 mb-5">
+            <div class="stat-card"><div class="text-xs text-gray-500 mb-1">Sites scrapés</div><div class="text-2xl font-bold text-white" id="stat-sites">0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500 mb-1">Documents trouvés</div><div class="text-2xl font-bold text-white" id="stat-docs">0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500 mb-1">Pertinents</div><div class="text-2xl font-bold text-green-400" id="stat-pertinents">0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500 mb-1">Taux</div><div class="text-2xl font-bold text-red-400" id="stat-taux">0%</div></div>
+        </div>
+        <div class="card">
+            <div class="flex items-center justify-between mb-4">
+                <span class="text-sm font-semibold text-gray-300 flex items-center gap-2">
+                    <i data-lucide="clock" class="w-4 h-4 text-red-500"></i>Historique des analyses
+                </span>
+                <button onclick="chargerHistorique()" class="btn-secondary text-xs py-1"><i data-lucide="refresh-cw" class="w-3 h-3"></i>Actualiser</button>
+            </div>
+            <table class="w-full text-sm">
+                <thead><tr class="text-xs text-gray-500 uppercase border-b border-gray-700">
+                    <th class="text-left py-2 pr-4">Date</th>
+                    <th class="text-left py-2 pr-4">Cibles</th>
+                    <th class="text-left py-2 pr-4">Documents</th>
+                    <th class="text-left py-2">Pertinents</th>
+                </tr></thead>
+                <tbody id="history-table" class="divide-y divide-gray-800">
+                    <tr><td colspan="4" class="py-4 text-center text-gray-600 text-xs">Aucune analyse lancée</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ TAB DOCUMENTS -->
+    <div id="pane-documents" class="tab-pane hidden">
+        <div class="card mb-4">
+            <div class="flex flex-wrap gap-3 items-center">
+                <input type="text" id="doc-search" placeholder="Rechercher..." class="form-input flex-1 min-w-48 py-1.5 text-sm">
+                <select id="doc-score-filter" class="form-input w-44 py-1.5 text-sm">
+                    <option value="">Tous les scores</option>
+                    <option value="high">Élevé (7-10)</option>
+                    <option value="medium">Moyen (4-6)</option>
+                    <option value="low">Faible (0-3)</option>
+                </select>
+                <select id="doc-pertinence-filter" class="form-input w-44 py-1.5 text-sm">
+                    <option value="">Tous</option>
+                    <option value="true">Pertinents</option>
+                    <option value="false">Non pertinents</option>
+                </select>
+                <button onclick="chargerDocuments()" class="btn-secondary text-sm py-1.5"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Actualiser</button>
+                <button onclick="exporterResultats()" class="btn-secondary text-sm py-1.5"><i data-lucide="download" class="w-4 h-4"></i>Exporter</button>
+                <button onclick="purgerDocuments()" class="text-sm py-1.5 px-3 bg-red-900/40 text-red-400 border border-red-800 rounded-lg hover:bg-red-900/60 flex items-center gap-1">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>Purger
+                </button>
+            </div>
+        </div>
+        <div id="docs-stats" class="grid grid-cols-4 gap-3 mb-4 hidden">
+            <div class="stat-card"><div class="text-xs text-gray-500">Total</div><div class="text-xl font-bold text-white" id="d-total">0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500">Pertinents</div><div class="text-xl font-bold text-green-400" id="d-pertinents">0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500">Score moyen</div><div class="text-xl font-bold text-yellow-400" id="d-score">0.0</div></div>
+            <div class="stat-card"><div class="text-xs text-gray-500">Taux</div><div class="text-xl font-bold text-red-400" id="d-taux">0%</div></div>
+        </div>
+        <div id="docs-loading" class="text-center py-12 text-gray-500"><i data-lucide="loader" class="w-8 h-8 mx-auto animate-spin mb-2"></i>Chargement...</div>
+        <div id="docs-empty" class="text-center py-12 text-gray-600 hidden"><i data-lucide="file-x" class="w-12 h-12 mx-auto mb-3"></i><p>Aucun document. Lancez une recherche d'abord.</p></div>
+        <div id="docs-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden"></div>
+    </div>
+
+    </div><!-- fin .p-6 -->
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+// ── Données ───────────────────────────────────────────────────────────────────
+const DEPARTEMENTS = [
+    {code:'01',nom:'Ain'},{code:'02',nom:'Aisne'},{code:'03',nom:'Allier'},
+    {code:'04',nom:'Alpes-de-Haute-Provence'},{code:'05',nom:'Hautes-Alpes'},{code:'06',nom:'Alpes-Maritimes'},
+    {code:'07',nom:'Ardèche'},{code:'08',nom:'Ardennes'},{code:'09',nom:'Ariège'},
+    {code:'10',nom:'Aube'},{code:'11',nom:'Aude'},{code:'12',nom:'Aveyron'},
+    {code:'13',nom:'Bouches-du-Rhône'},{code:'14',nom:'Calvados'},{code:'15',nom:'Cantal'},
+    {code:'16',nom:'Charente'},{code:'17',nom:'Charente-Maritime'},{code:'18',nom:'Cher'},
+    {code:'19',nom:'Corrèze'},{code:'21',nom:"Côte-d'Or"},{code:'22',nom:"Côtes-d'Armor"},
+    {code:'23',nom:'Creuse'},{code:'24',nom:'Dordogne'},{code:'25',nom:'Doubs'},
+    {code:'26',nom:'Drôme'},{code:'27',nom:'Eure'},{code:'28',nom:'Eure-et-Loir'},
+    {code:'29',nom:'Finistère'},{code:'2A',nom:'Corse-du-Sud'},{code:'2B',nom:'Haute-Corse'},
+    {code:'30',nom:'Gard'},{code:'31',nom:'Haute-Garonne'},{code:'32',nom:'Gers'},
+    {code:'33',nom:'Gironde'},{code:'34',nom:'Hérault'},{code:'35',nom:'Ille-et-Vilaine'},
+    {code:'36',nom:'Indre'},{code:'37',nom:'Indre-et-Loire'},{code:'38',nom:'Isère'},
+    {code:'39',nom:'Jura'},{code:'40',nom:'Landes'},{code:'41',nom:'Loir-et-Cher'},
+    {code:'42',nom:'Loire'},{code:'43',nom:'Haute-Loire'},{code:'44',nom:'Loire-Atlantique'},
+    {code:'45',nom:'Loiret'},{code:'46',nom:'Lot'},{code:'47',nom:'Lot-et-Garonne'},
+    {code:'48',nom:'Lozère'},{code:'49',nom:'Maine-et-Loire'},{code:'50',nom:'Manche'},
+    {code:'51',nom:'Marne'},{code:'52',nom:'Haute-Marne'},{code:'53',nom:'Mayenne'},
+    {code:'54',nom:'Meurthe-et-Moselle'},{code:'55',nom:'Meuse'},{code:'56',nom:'Morbihan'},
+    {code:'57',nom:'Moselle'},{code:'58',nom:'Nièvre'},{code:'59',nom:'Nord'},
+    {code:'60',nom:'Oise'},{code:'61',nom:'Orne'},{code:'62',nom:'Pas-de-Calais'},
+    {code:'63',nom:'Puy-de-Dôme'},{code:'64',nom:'Pyrénées-Atlantiques'},{code:'65',nom:'Hautes-Pyrénées'},
+    {code:'66',nom:'Pyrénées-Orientales'},{code:'67',nom:'Bas-Rhin'},{code:'68',nom:'Haut-Rhin'},
+    {code:'69',nom:'Rhône'},{code:'70',nom:'Haute-Saône'},{code:'71',nom:'Saône-et-Loire'},
+    {code:'72',nom:'Sarthe'},{code:'73',nom:'Savoie'},{code:'74',nom:'Haute-Savoie'},
+    {code:'75',nom:'Paris'},{code:'76',nom:'Seine-Maritime'},{code:'77',nom:'Seine-et-Marne'},
+    {code:'78',nom:'Yvelines'},{code:'79',nom:'Deux-Sèvres'},{code:'80',nom:'Somme'},
+    {code:'81',nom:'Tarn'},{code:'82',nom:'Tarn-et-Garonne'},{code:'83',nom:'Var'},
+    {code:'84',nom:'Vaucluse'},{code:'85',nom:'Vendée'},{code:'86',nom:'Vienne'},
+    {code:'87',nom:'Haute-Vienne'},{code:'88',nom:'Vosges'},{code:'89',nom:'Yonne'},
+    {code:'90',nom:'Territoire de Belfort'},{code:'91',nom:'Essonne'},{code:'92',nom:'Hauts-de-Seine'},
+    {code:'93',nom:'Seine-Saint-Denis'},{code:'94',nom:'Val-de-Marne'},{code:'95',nom:"Val-d'Oise"},
+];
+
+const REGIONS = {
+    aura:['01','03','07','15','26','38','42','43','63','69','73','74'],
+    idf: ['75','77','78','91','92','93','94','95'],
+    occ: ['09','11','12','30','31','32','34','46','48','65','66','81','82'],
+    naq: ['16','17','19','23','24','33','40','47','64','79','86','87'],
+    bfc: ['21','25','39','58','70','71','89','90'],
+    paca:['04','05','06','13','83','84'],
+    bre: ['22','29','35','56'],
+    nor: ['14','27','50','61','76'],
+    hdf: ['02','59','60','62','80'],
+    ges: ['08','10','51','52','54','55','57','67','68','88'],
+    pdl: ['44','49','53','72','85'],
+    cvl: ['18','28','36','37','41','45'],
+};
+
+// ── Textes d'aide ─────────────────────────────────────────────────────────────
+const AIDE = {
+    presets: {
+        titre: '🎯 Presets prédéfinis',
+        contenu: `<p>Les presets chargent automatiquement une configuration complète adaptée à un type de projet énergétique :</p>
+        <ul class="list-disc pl-4 mt-2 space-y-1">
+            <li><strong class="text-red-400">Chaufferies Biomasse</strong> — Détection de projets chaufferies bois/granulés/plaquettes</li>
+            <li><strong class="text-yellow-400">Panneaux Solaires</strong> — Photovoltaïque, toiture solaire, autoconsommation</li>
+            <li><strong class="text-orange-400">Pompes à Chaleur</strong> — PAC, géothermie, aérothermie</li>
+            <li><strong class="text-blue-400">Bornes Recharge VE</strong> — Mobilité électrique, IRVE</li>
+            <li><strong class="text-green-400">Rénovation Bâtiments</strong> — Isolation, BBC, rénovation énergétique</li>
+        </ul>
+        <p class="mt-2 text-gray-400 text-xs">Vous pouvez modifier les mots-clés après avoir appliqué un preset.</p>`
+    },
+    mots_cles: {
+        titre: '🏷️ Mots-clés de détection',
+        contenu: `<p>Les mots-clés sont utilisés pour <strong>scorer chaque page web</strong> visitée. Plus une page contient de mots-clés, plus son score est élevé.</p>
+        <div class="mt-3 space-y-2">
+            <div class="p-2 bg-red-900/20 rounded border border-red-800/40">
+                <strong class="text-red-400">Prioritaires × 2 pts</strong><br>
+                <span class="text-xs">Mots directement liés au projet. Ex: "chaufferie", "biomasse". Chaque occurrence rapporte 2 points.</span>
+            </div>
+            <div class="p-2 bg-yellow-900/20 rounded border border-yellow-800/40">
+                <strong class="text-yellow-400">Secondaires × 1 pt</strong><br>
+                <span class="text-xs">Mots associés au contexte. Ex: "granulés", "plaquettes". 1 point chacun.</span>
+            </div>
+            <div class="p-2 bg-green-900/20 rounded border border-green-800/40">
+                <strong class="text-green-400">Budget × 1 pt</strong><br>
+                <span class="text-xs">Signaux d'intention budgétaire. Ex: "subvention", "ADEME". 1 point chacun.</span>
+            </div>
+        </div>`
+    },
+    mots_prioritaires: {
+        titre: '🔴 Mots-clés prioritaires',
+        contenu: `<p>Ces mots sont les <strong>signaux forts</strong> de votre recherche. Ils valent <strong>2 points</strong> chacun dans le score de pertinence.</p>
+        <p class="mt-2">Utilisez des termes très spécifiques à votre projet :</p>
+        <ul class="list-disc pl-4 mt-1 text-xs space-y-1">
+            <li>Noms techniques précis (ex: "chaufferie biomasse")</li>
+            <li>Acronymes officiels (ex: "ADEME", "CEE")</li>
+            <li>Termes réglementaires (ex: "réseau de chaleur")</li>
+        </ul>
+        <p class="mt-2 text-xs text-gray-400">⚠️ Évitez les mots trop génériques qui généreraient du bruit.</p>`
+    },
+    mots_secondaires: {
+        titre: '🟡 Mots-clés secondaires',
+        contenu: `<p>Ces mots sont des <strong>signaux contextuels</strong> qui confirment l'intérêt d'une page. Ils valent <strong>1 point</strong> chacun.</p>
+        <p class="mt-2 text-xs">Exemples : technologies associées, matériaux, équipements périphériques.</p>
+        <p class="mt-2 text-xs text-gray-400">Une page avec uniquement des mots secondaires peut quand même être pertinente si le seuil est bas.</p>`
+    },
+    mots_budget: {
+        titre: '🟢 Mots-clés budget',
+        contenu: `<p>Ces mots signalent une <strong>intention de financement ou d'investissement</strong>. Ils valent <strong>1 point</strong> chacun.</p>
+        <p class="mt-2 text-xs">Exemples : "budget", "crédit", "subvention", "fonds chaleur", "ADEME", "CEE", "investissement".</p>
+        <p class="mt-2 text-xs text-gray-400">💡 Astuce : les délibérations municipales mentionnent souvent les montants et sources de financement — ces mots permettent de les cibler.</p>`
+    },
+    seuils: {
+        titre: '⚖️ Seuils de détection',
+        contenu: `<p>Les seuils définissent à partir de quel score un document est considéré comme <strong>pertinent</strong>.</p>
+        <div class="mt-3 space-y-3">
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-red-400">Seuil scraping</strong> — Filtre rapide par mots-clés<br>
+                <span class="text-xs">Appliqué pendant le scraping. Les pages avec un score inférieur sont ignorées immédiatement.</span>
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-red-400">Seuil IA</strong> — Filtre par analyse Mistral/Ollama<br>
+                <span class="text-xs">Appliqué après l'analyse IA. Les documents avec un score IA inférieur sont exclus des résultats.</span>
+            </div>
+        </div>`
+    },
+    seuil_scraping: {
+        titre: '🔍 Seuil minimum scraping',
+        contenu: `<p>Ce seuil est appliqué <strong>en temps réel pendant le scraping</strong>, avant toute analyse IA.</p>
+        <div class="mt-2 space-y-1 text-xs">
+            <div class="flex items-center gap-2"><span class="help-tag" style="background:#374151;color:#9ca3af">1 — Large</span> Toutes les pages avec au moins 1 mot-clé</div>
+            <div class="flex items-center gap-2"><span class="help-tag" style="background:#7f1d1d;color:#fca5a5">2 — Recommandé</span> Bon équilibre précision/rappel</div>
+            <div class="flex items-center gap-2"><span class="help-tag" style="background:#991b1b;color:#fca5a5">3-4 — Strict</span> Uniquement les pages très ciblées</div>
+            <div class="flex items-center gap-2"><span class="help-tag" style="background:#b91c1c;color:#fca5a5">5 — Très strict</span> Risque de manquer des opportunités</div>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">⚡ Un seuil bas = plus de pages analysées = plus lent mais plus complet.</p>`
+    },
+    seuil_ia: {
+        titre: '🤖 Seuil IA minimum (/10)',
+        contenu: `<p>Score minimum attribué par l'IA (Mistral/Ollama) pour qu'un document soit conservé dans les résultats.</p>
+        <div class="mt-2 space-y-1 text-xs">
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">1-4</span> Pertinence faible — beaucoup de faux positifs</div>
+            <div><span class="help-tag" style="background:#7f1d1d;color:#fca5a5">5-6</span> Pertinence moyenne</div>
+            <div><span class="help-tag" style="background:#991b1b;color:#fca5a5">7 — Recommandé</span> Bonne pertinence</div>
+            <div><span class="help-tag" style="background:#b91c1c;color:#fca5a5">8-10</span> Très pertinent — risque de manquer des projets</div>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">L'IA évalue le document sur 10 en analysant son contenu complet.</p>`
+    },
+    params_scraping: {
+        titre: '⚙️ Paramètres de scraping',
+        contenu: `<p>Ces paramètres contrôlent le <strong>comportement technique</strong> du scraper lors de la visite des sites municipaux.</p>`
+    },
+    delai: {
+        titre: '⏱️ Délai entre requêtes',
+        contenu: `<p>Temps d'attente entre chaque requête HTTP vers un même site.</p>
+        <div class="mt-2 space-y-1 text-xs">
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">0.5s</span> Rapide — risque de blocage par le serveur</div>
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">1.5s — Recommandé</span> Bon équilibre vitesse/respect</div>
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">3s+</span> Lent mais très respectueux</div>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">⚠️ Un délai trop court peut déclencher des protections anti-bot et bloquer votre IP.</p>`
+    },
+    timeout: {
+        titre: '⏳ Timeout',
+        contenu: `<p>Durée maximale d'attente pour qu'un site réponde avant d'abandonner la requête.</p>
+        <ul class="list-disc pl-4 mt-2 text-xs space-y-1">
+            <li><strong>10s</strong> — Sites rapides (hébergement moderne)</li>
+            <li><strong>30s — Recommandé</strong> — Sites municipaux souvent lents</li>
+            <li><strong>60s+</strong> — Sites très lents ou instables</li>
+        </ul>
+        <p class="mt-2 text-xs text-gray-400">Les sites municipaux peuvent être hébergés sur des serveurs anciens avec des temps de réponse élevés.</p>`
+    },
+    profondeur: {
+        titre: '🔬 Profondeur de scraping',
+        contenu: `<p>Définit combien de pages sont visitées sur chaque site municipal.</p>
+        <div class="mt-2 space-y-2 text-xs">
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-green-400">Léger</strong> — Page d'accueil uniquement<br>
+                <span class="text-gray-400">Rapide (~5s/site). Détecte seulement les projets très visibles.</span>
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-yellow-400">Moyen — Recommandé</strong> — Accueil + sections principales<br>
+                <span class="text-gray-400">~30s/site. Visite actualités, délibérations, marchés publics.</span>
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-red-400">Profond</strong> — Toutes les sous-pages<br>
+                <span class="text-gray-400">Lent (~2-5min/site). Analyse exhaustive, détecte les signaux faibles.</span>
+            </div>
+        </div>`
+    },
+    sites_scraper: {
+        titre: '🌐 Sites à scraper',
+        contenu: `<p>Deux modes pour définir les sites municipaux à analyser :</p>
+        <div class="mt-2 space-y-2 text-xs">
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-blue-400">URLs manuelles</strong><br>
+                Entrez directement les URLs des sites. Idéal pour cibler des communes précises ou tester.
+            </div>
+            <div class="p-2 bg-gray-800 rounded">
+                <strong class="text-red-400">Par département</strong><br>
+                Sélectionnez des départements sur la carte. Le scraper trouvera automatiquement les URLs de toutes les communes ≥ population minimale.
+            </div>
+        </div>`
+    },
+    population_min: {
+        titre: '👥 Population minimale',
+        contenu: `<p>Filtre les communes par nombre d'habitants. Seules les communes avec une population <strong>supérieure ou égale</strong> à ce seuil seront scrapées.</p>
+        <div class="mt-2 space-y-1 text-xs">
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">500 hab.</span> Toutes les communes (très long)</div>
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">2 000 hab.</span> Communes rurales et semi-rurales</div>
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">5 000 hab. — Recommandé</span> Bon équilibre</div>
+            <div><span class="help-tag" style="background:#374151;color:#9ca3af">10 000+ hab.</span> Villes moyennes uniquement</div>
+        </div>
+        <p class="mt-2 text-xs text-gray-400">💡 Les communes de plus de 3 500 hab. ont l'obligation de publier leurs délibérations en ligne.</p>`
+    },
+    regions: {
+        titre: '🗺️ Sélection par région',
+        contenu: `<p>Sélectionne automatiquement <strong>tous les départements</strong> d'une région administrative française.</p>
+        <p class="mt-2 text-xs">Vous pouvez ensuite désélectionner individuellement certains départements sur la carte.</p>
+        <p class="mt-2 text-xs text-gray-400">Les régions disponibles couvrent la France métropolitaine. Les DOM-TOM ne sont pas encore supportés.</p>`
+    },
+};
+
+// ── Modal aide ────────────────────────────────────────────────────────────────
+function aide(key) {
+    const data = AIDE[key];
+    if (!data) return;
+    document.getElementById('help-title').textContent = data.titre;
+    document.getElementById('help-body').innerHTML = data.contenu;
+    document.getElementById('help-overlay').classList.add('open');
+}
+function fermerAide(e) {
+    if (!e || e.target === document.getElementById('help-overlay')) {
+        document.getElementById('help-overlay').classList.remove('open');
+    }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fermerAide(); });
+
+// ── État global ───────────────────────────────────────────────────────────────
+let presetsData = {};
+let pollingInterval = null;
+let currentMode = 'single';
+let allDocs = [];
+let deptsSelectionnes = new Set();
+let carteInitialisee = false;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+    lucide.createIcons();
+    await Promise.all([chargerConfig(), chargerPresets()]);
+    chargerDocuments();
+    chargerHistorique();
+    bindDocFilters();
+});
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('pane-' + name)?.classList.remove('hidden');
+    document.getElementById('tab-' + name)?.classList.add('active');
+    if (name === 'lancement') mettreAJourResume();
+    if (name === 'documents') chargerDocuments();
+    if (name === 'resultats') chargerHistorique();
+}
+
+// ── Mode URL / Département ────────────────────────────────────────────────────
+function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('mode-single-panel').classList.toggle('hidden', mode !== 'single');
+    document.getElementById('mode-dept-panel').classList.toggle('hidden', mode !== 'department');
+    document.getElementById('mode-single').classList.toggle('active', mode === 'single');
+    document.getElementById('mode-dept').classList.toggle('active', mode === 'department');
+    if (mode === 'department' && !carteInitialisee) {
+        setTimeout(initCarteD3, 100);
+    }
+}
+</script>
+
+<script>
+// ── Carte D3.js avec GeoJSON officiel ────────────────────────────────────────
+async function initCarteD3() {
+    if (carteInitialisee) { mettreAJourCouleurs(); return; }
+    carteInitialisee = true;
+
+    const container = document.getElementById('carte-container');
+    const svg = d3.select('#carte-svg');
+    svg.selectAll('*').remove();
+
+    const W = container.clientWidth || 700;
+    const H = container.clientHeight || 520;
+    svg.attr('viewBox', `0 0 ${W} ${H}`).attr('preserveAspectRatio', 'xMidYMid meet');
+
+    // Charger GeoJSON officiel des départements français
+    let geojson;
+    try {
+        const r = await fetch('https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements-version-simplifiee.geojson');
+        geojson = await r.json();
+    } catch(e) {
+        svg.append('text').attr('x', W/2).attr('y', H/2)
+            .attr('text-anchor','middle').attr('fill','#6b7280').attr('font-size','12')
+            .text('Carte non disponible (réseau requis)');
+        return;
+    }
+
+    // fitSize ajuste automatiquement la projection pour que TOUS les départements
+    // (Corse incluse) rentrent dans le conteneur avec une marge de 12px
+    const projection = d3.geoConicConformal().center([2.454071, 46.279229]);
+    const path = d3.geoPath().projection(projection);
+    projection.fitExtent([[12, 12], [W - 12, H - 12]], {type: 'FeatureCollection', features: geojson.features});
+    const tooltip = document.getElementById('carte-tooltip-d3');
+
+    const g = svg.append('g');
+
+    g.selectAll('path')
+        .data(geojson.features)
+        .enter()
+        .append('path')
+        .attr('d', path)
+        .attr('data-code', d => d.properties.code)
+        .attr('fill', d => deptsSelectionnes.has(d.properties.code) ? '#dc2626' : '#374151')
+        .attr('stroke', '#1f2937')
+        .attr('stroke-width', '0.5')
+        .on('click', function(event, d) {
+            const code = d.properties.code;
+            if (deptsSelectionnes.has(code)) deptsSelectionnes.delete(code);
+            else deptsSelectionnes.add(code);
+            mettreAJourCouleurs();
+            mettreAJourListe();
+        })
+        .on('mousemove', function(event, d) {
+            const code = d.properties.code;
+            const nom = d.properties.nom;
+            const rect = container.getBoundingClientRect();
+            tooltip.textContent = code + ' — ' + nom;
+            tooltip.style.left = (event.clientX - rect.left + 12) + 'px';
+            tooltip.style.top = (event.clientY - rect.top - 28) + 'px';
+            tooltip.classList.remove('hidden');
+            d3.select(this).attr('fill', deptsSelectionnes.has(code) ? '#ef4444' : '#1e3a5f');
+        })
+        .on('mouseleave', function(event, d) {
+            tooltip.classList.add('hidden');
+            const code = d.properties.code;
+            d3.select(this).attr('fill', deptsSelectionnes.has(code) ? '#dc2626' : '#374151');
+        });
+
+    // Labels numéros de département
+    g.selectAll('text')
+        .data(geojson.features)
+        .enter()
+        .append('text')
+        .attr('transform', d => {
+            const c = path.centroid(d);
+            return isNaN(c[0]) ? null : `translate(${c})`;
+        })
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.35em')
+        .attr('font-size', d => {
+            // Paris et petits depts : plus petit
+            return ['75','92','93','94'].includes(d.properties.code) ? '5' : '7';
+        })
+        .attr('fill', d => deptsSelectionnes.has(d.properties.code) ? '#fff' : '#9ca3af')
+        .attr('pointer-events', 'none')
+        .attr('data-label', d => d.properties.code)
+        .text(d => d.properties.code);
+
+    mettreAJourListe();
+}
+
+function mettreAJourCouleurs() {
+    d3.selectAll('#carte-svg path').attr('fill', function() {
+        const code = d3.select(this).attr('data-code');
+        return deptsSelectionnes.has(code) ? '#dc2626' : '#374151';
+    });
+    d3.selectAll('#carte-svg text[data-label]').attr('fill', function() {
+        const code = d3.select(this).attr('data-label');
+        return deptsSelectionnes.has(code) ? '#fff' : '#9ca3af';
+    });
+    mettreAJourListe();
+}
+
+function mettreAJourListe() {
+    const list = document.getElementById('depts-selectionnes');
+    const nb = document.getElementById('nb-depts-sel');
+    if (!list) return;
+    const sel = [...deptsSelectionnes].sort();
+    nb.textContent = sel.length;
+    list.innerHTML = sel.map(code => {
+        const d = DEPARTEMENTS.find(x => x.code === code);
+        return `<div class="flex items-center justify-between text-xs py-0.5">
+            <span class="text-gray-300"><span class="font-mono text-red-400 mr-1">${code}</span>${d ? d.nom.substring(0,14) : ''}</span>
+            <button onclick="retirerDept('${code}')" class="text-gray-600 hover:text-red-400 ml-1 text-base leading-none">&times;</button>
+        </div>`;
+    }).join('') || '<span class="text-xs text-gray-600">Aucun sélectionné</span>';
+}
+
+function retirerDept(code) {
+    deptsSelectionnes.delete(code);
+    mettreAJourCouleurs();
+}
+
+function selectionnerRegion(key) {
+    if (!key) return;
+    (REGIONS[key] || []).forEach(c => deptsSelectionnes.add(c));
+    mettreAJourCouleurs();
+    document.getElementById('region-select').value = '';
+}
+
+function deselectionnerTout() {
+    deptsSelectionnes.clear();
+    mettreAJourCouleurs();
+}
+
+// Compat avec remplir()
+function genererDepts(sel) {
+    deptsSelectionnes = new Set(sel);
+    if (carteInitialisee) mettreAJourCouleurs();
+}
+function getDepts() { return [...deptsSelectionnes]; }
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function chargerConfig() {
+    try {
+        const r = await fetch('/api/config/search');
+        if (!r.ok) return;
+        remplir(await r.json());
+    } catch(e) {}
+}
+async function chargerPresets() {
+    try {
+        const r = await fetch('/api/config/presets');
+        if (r.ok) presetsData = await r.json();
+    } catch(e) {}
+}
+
+function remplir(cfg) {
+    document.getElementById('nom_campagne').value = cfg.nom_campagne || '';
+    document.getElementById('description').value = cfg.description || '';
+    document.getElementById('date_debut_recherche').value = cfg.date_debut_recherche || '';
+    document.getElementById('header-campagne-nom').textContent = cfg.nom_campagne || '—';
+    const mk = cfg.mots_cles || {};
+    document.getElementById('mots_prioritaires').value = (mk.prioritaires||[]).join('\n');
+    document.getElementById('mots_secondaires').value = (mk.secondaires||[]).join('\n');
+    document.getElementById('mots_budget').value = (mk.budget||[]).join('\n');
+    const z = cfg.zones_geographiques || {};
+    genererDepts(z.departements || []);
+    const minPop = document.getElementById('dept-min-pop');
+    if (minPop) minPop.value = z.population_min ?? 5000;
+    const p = cfg.parametres_scraping || {};
+    const sc = p.seuil_confiance_min ?? 2;
+    document.getElementById('seuil_confiance').value = sc;
+    document.getElementById('seuil_label').textContent = sc;
+    document.getElementById('delai_requetes').value = p.delai_entre_requetes ?? 1.5;
+    document.getElementById('timeout').value = p.timeout ?? 30;
+    document.getElementById('profondeur').value = p.profondeur || 'moyen';
+    const si = cfg.seuil_ia ?? 7;
+    document.getElementById('seuil_ia').value = si;
+    document.getElementById('seuil_ia_label').textContent = si;
+}
+
+function lireFormulaire() {
+    const lignes = id => document.getElementById(id).value.split('\n').map(s=>s.trim()).filter(Boolean);
+    return {
+        nom_campagne: document.getElementById('nom_campagne').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        date_debut_recherche: document.getElementById('date_debut_recherche').value,
+        mots_cles: {
+            prioritaires: lignes('mots_prioritaires'),
+            secondaires: lignes('mots_secondaires'),
+            budget: lignes('mots_budget'),
+        },
+        zones_geographiques: {
+            departements: getDepts(),
+            population_min: parseInt(document.getElementById('dept-min-pop')?.value)||500,
+            population_max: 200000,
+        },
+        parametres_scraping: {
+            seuil_confiance_min: parseInt(document.getElementById('seuil_confiance').value),
+            delai_entre_requetes: parseFloat(document.getElementById('delai_requetes').value),
+            timeout: parseInt(document.getElementById('timeout').value),
+            profondeur: document.getElementById('profondeur').value,
+        },
+        seuil_ia: parseInt(document.getElementById('seuil_ia').value),
+    };
+}
+
+function mettreAJourResume() {
+    const cfg = lireFormulaire();
+    document.getElementById('resume-nom').textContent = cfg.nom_campagne || '—';
+    const tag = (m, cls) => `<span class="text-xs px-2 py-0.5 rounded-full ${cls}">${m}</span>`;
+    document.getElementById('resume-prioritaires').innerHTML =
+        cfg.mots_cles.prioritaires.map(m => tag(m,'bg-red-900/50 text-red-300')).join('') || '<span class="text-xs text-gray-600">aucun</span>';
+    document.getElementById('resume-secondaires').innerHTML =
+        cfg.mots_cles.secondaires.map(m => tag(m,'bg-gray-700 text-gray-400')).join('') || '<span class="text-xs text-gray-600">aucun</span>';
+    document.getElementById('resume-seuil').textContent = cfg.parametres_scraping.seuil_confiance_min;
+    document.getElementById('resume-seuil-ia').textContent = cfg.seuil_ia;
+    document.getElementById('resume-profondeur').textContent = cfg.parametres_scraping.profondeur;
+}
+
+async function sauvegarder() {
+    const cfg = lireFormulaire();
+    if (!cfg.nom_campagne) { showToast('Nom de campagne obligatoire','error'); return; }
+    if (!cfg.mots_cles.prioritaires.length) { showToast('Au moins un mot-clé prioritaire requis','error'); return; }
+    try {
+        const r = await fetch('/api/config/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+        const data = await r.json();
+        if (r.ok) { document.getElementById('header-campagne-nom').textContent = cfg.nom_campagne; showToast('Configuration sauvegardée !','success'); }
+        else showToast('Erreur : '+(data.error||'Inconnue'),'error');
+    } catch(e) { showToast('Erreur réseau','error'); }
+}
+
+async function resetConfig() {
+    if (!confirm('Réinitialiser avec les valeurs par défaut ?')) return;
+    try {
+        const r = await fetch('/api/config/search/reset',{method:'POST'});
+        const data = await r.json();
+        if (r.ok) { remplir(data.config); showToast('Config réinitialisée','success'); }
+    } catch(e) { showToast('Erreur réseau','error'); }
+}
+
+function appliquerPreset(key, btn) {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (key === 'custom') {
+        ['nom_campagne','description','mots_prioritaires','mots_secondaires','mots_budget'].forEach(id => document.getElementById(id).value='');
+        return;
+    }
+    const p = presetsData[key];
+    if (!p) { showToast('Preset non disponible','error'); return; }
+    remplir(p);
+    showToast('Preset "'+p.nom_campagne+'" appliqué','success');
+}
+
+// ── Lancer scraping ───────────────────────────────────────────────────────────
+async function lancerScraping() {
+    const cfg = lireFormulaire();
+    if (!cfg.nom_campagne || !cfg.mots_cles.prioritaires.length) {
+        showToast('Configurez la campagne avant de lancer','error');
+        showTab('config'); return;
+    }
+    await sauvegarder();
+    let crawlingConfig = { mode: currentMode };
+    if (currentMode === 'single') {
+        const urls = document.getElementById('urls-input').value.split('\n').map(u=>u.trim()).filter(Boolean);
+        if (!urls.length) { showToast("Entrez au moins une URL dans l'onglet Lancement",'error'); showTab('lancement'); return; }
+        crawlingConfig.predefined_urls = urls;
+    } else {
+        const depts = getDepts();
+        if (!depts.length) { showToast('Sélectionnez au moins un département sur la carte','error'); return; }
+        crawlingConfig.department = {
+            codes: depts,
+            min_population: parseInt(document.getElementById('dept-min-pop').value)||5000,
+        };
+    }
+    const payload = {
+        crawling: crawlingConfig,
+        ai: { search_depth: cfg.parametres_scraping.profondeur, score_threshold: cfg.seuil_ia, api_provider:'ollama', model:'mistral' },
+        filtering: { energy_keywords: [...cfg.mots_cles.prioritaires,...cfg.mots_cles.secondaires,...cfg.mots_cles.budget] }
+    };
+    setBtnState(true);
+    showTab('lancement');
+    clearLogs();
+    addLog('🚀 Démarrage de la recherche...','info');
+    document.getElementById('progress-bar').style.width = '5%';
+    try {
+        const r = await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if (r.ok) demarrerPolling();
+        else { addLog('❌ Erreur au démarrage','error'); setBtnState(false); }
+    } catch(e) { addLog('❌ Erreur réseau : '+e.message,'error'); setBtnState(false); }
+}
+
+function stopScraping() {
+    if (pollingInterval) { clearInterval(pollingInterval); pollingInterval=null; }
+    setBtnState(false);
+    addLog('⏹ Arrêté par l\'utilisateur','warning');
+}
+
+function setBtnState(running) {
+    ['btn-lancer','btn-lancer-2'].forEach(id => { const b=document.getElementById(id); if(b) b.disabled=running; });
+    const stop = document.getElementById('btn-stop');
+    if (stop) stop.classList.toggle('hidden',!running);
+}
+
+function demarrerPolling() {
+    let progress = 5;
+    pollingInterval = setInterval(async () => {
+        try {
+            const r = await fetch('/api/status');
+            const data = await r.json();
+            if (data.status === 'no_update') return;
+            const type = data.status==='error'?'error':data.status==='warning'?'warning':data.status==='completed'?'success':'info';
+            addLog(data.message||'',type);
+            if (data.status==='running' && progress<90) progress=Math.min(90,progress+2);
+            document.getElementById('progress-bar').style.width=progress+'%';
+            document.getElementById('progress-text').textContent=(data.message||'').slice(0,80);
+            if (data.status==='completed'||data.status==='error') {
+                clearInterval(pollingInterval); pollingInterval=null;
+                document.getElementById('progress-bar').style.width=data.status==='completed'?'100%':progress+'%';
+                setBtnState(false);
+                if (data.status==='completed') { showToast('Recherche terminée !','success'); chargerDocuments(); chargerHistorique(); }
+            }
+        } catch(e) {}
+    }, 800);
+}
+
+function addLog(msg,type='info') {
+    const colors={info:'text-blue-400',success:'text-green-400',warning:'text-yellow-400',error:'text-red-400'};
+    const c=document.getElementById('logs-container');
+    const d=document.createElement('div');
+    d.className='log-entry '+(colors[type]||'text-gray-300');
+    d.textContent='['+new Date().toLocaleTimeString('fr-FR')+'] '+msg;
+    c.appendChild(d); c.scrollTop=c.scrollHeight;
+    while(c.children.length>200) c.removeChild(c.firstChild);
+}
+function clearLogs() { document.getElementById('logs-container').innerHTML='<div class="log-entry text-gray-600">Logs effacés.</div>'; }
+
+async function chargerCommunesAuvergne() {
+    const minPop=document.getElementById('auvergne-min-pop').value||5000;
+    try {
+        const r=await fetch('/api/communes/auvergne?min_population='+minPop);
+        if(!r.ok){showToast('Erreur chargement communes','error');return;}
+        const data=await r.json();
+        const urls=(data.communes||data).map(c=>c.url||c.website||'').filter(Boolean);
+        document.getElementById('urls-input').value=urls.join('\n');
+        showToast(urls.length+' communes chargées','success');
+    } catch(e){showToast('Erreur : '+e.message,'error');}
+}
+
+async function chargerDocuments() {
+    document.getElementById('docs-loading').classList.remove('hidden');
+    document.getElementById('docs-grid').classList.add('hidden');
+    document.getElementById('docs-empty').classList.add('hidden');
+    try {
+        const r=await fetch('/api/documents');
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        allDocs=await r.json();
+        afficherDocuments(allDocs);
+    } catch(e) { document.getElementById('docs-loading').classList.add('hidden'); document.getElementById('docs-empty').classList.remove('hidden'); }
+}
+
+function afficherDocuments(docs) {
+    document.getElementById('docs-loading').classList.add('hidden');
+    const search=document.getElementById('doc-search').value.toLowerCase();
+    const scoreF=document.getElementById('doc-score-filter').value;
+    const pertF=document.getElementById('doc-pertinence-filter').value;
+    let filtered=docs.filter(d=>{
+        if(search&&!((d.title||d.nom_fichier||'').toLowerCase().includes(search)||(d.ia_resume||'').toLowerCase().includes(search))) return false;
+        if(scoreF==='high'&&d.ia_score<7) return false;
+        if(scoreF==='medium'&&(d.ia_score<4||d.ia_score>6)) return false;
+        if(scoreF==='low'&&d.ia_score>3) return false;
+        if(pertF==='true'&&!d.ia_pertinent) return false;
+        if(pertF==='false'&&d.ia_pertinent) return false;
+        return true;
+    });
+    const total=filtered.length, pertinents=filtered.filter(d=>d.ia_pertinent).length;
+    const avgScore=total?(filtered.reduce((s,d)=>s+(d.ia_score||0),0)/total).toFixed(1):'0.0';
+    document.getElementById('d-total').textContent=total;
+    document.getElementById('d-pertinents').textContent=pertinents;
+    document.getElementById('d-score').textContent=avgScore;
+    document.getElementById('d-taux').textContent=total?Math.round(pertinents/total*100)+'%':'0%';
+    document.getElementById('docs-stats').classList.toggle('hidden',total===0);
+    if(!total){document.getElementById('docs-empty').classList.remove('hidden');document.getElementById('docs-grid').classList.add('hidden');return;}
+    document.getElementById('docs-empty').classList.add('hidden');
+    document.getElementById('docs-grid').classList.remove('hidden');
+    document.getElementById('docs-grid').innerHTML=filtered.map(d=>{
+        const score=d.ia_score||0,ok=d.ia_pertinent;
+        const sc=score>=7?'text-green-400':score>=4?'text-yellow-400':'text-gray-500';
+        const bc=ok?'border-green-800':'border-gray-700';
+        return `<div class="card-sm border ${bc}">
+            <div class="flex items-start justify-between mb-2">
+                <p class="text-sm font-medium text-gray-200 truncate flex-1 mr-2">${d.title||d.nom_fichier||'Sans titre'}</p>
+                <span class="text-lg font-bold ${sc} shrink-0">${score}/10</span>
+            </div>
+            <p class="text-xs text-gray-500 mb-2 truncate">${d.source_url||d.site_url||''}</p>
+            ${d.ia_resume?`<p class="text-xs text-gray-400 mb-2 line-clamp-2">${d.ia_resume}</p>`:''}
+            <div class="flex items-center gap-2 mt-2">
+                <span class="text-xs px-2 py-0.5 rounded-full ${ok?'bg-green-900/50 text-green-400':'bg-gray-700 text-gray-500'}">${ok?'✓ Pertinent':'Non pertinent'}</span>
+                ${d.source_url?`<a href="${d.source_url}" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Voir →</a>`:''}
+            </div>
+        </div>`;
+    }).join('');
+    lucide.createIcons();
+}
+
+function bindDocFilters() {
+    ['doc-search','doc-score-filter','doc-pertinence-filter'].forEach(id=>{
+        document.getElementById(id)?.addEventListener('input',()=>afficherDocuments(allDocs));
+        document.getElementById(id)?.addEventListener('change',()=>afficherDocuments(allDocs));
+    });
+}
+
+async function exporterResultats() {
+    try {
+        const r=await fetch('/api/export');
+        if(r.ok){const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='hardscrapper_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(url);}
+    } catch(e){showToast('Erreur export','error');}
+}
+
+async function purgerDocuments() {
+    if(!confirm('Supprimer tous les documents analysés ?')) return;
+    try {
+        const r=await fetch('/api/documents/purge',{method:'DELETE'});
+        if(r.ok){showToast('Documents purgés','success');chargerDocuments();}
+    } catch(e){showToast('Erreur purge','error');}
+}
+
+async function chargerHistorique() {
+    try {
+        const r=await fetch('/api/history');
+        if(!r.ok) return;
+        const history=await r.json();
+        const tbody=document.getElementById('history-table');
+        if(!history.length){tbody.innerHTML='<tr><td colspan="4" class="py-4 text-center text-gray-600 text-xs">Aucune analyse lancée</td></tr>';return;}
+        const last=history[history.length-1],res=last.results||{};
+        document.getElementById('stat-sites').textContent=res.target_info||'—';
+        document.getElementById('stat-docs').textContent=res.documents_processed||0;
+        document.getElementById('stat-pertinents').textContent=res.relevant_found||0;
+        const t=res.documents_processed||0,p=res.relevant_found||0;
+        document.getElementById('stat-taux').textContent=t?Math.round(p/t*100)+'%':'0%';
+        tbody.innerHTML=[...history].reverse().slice(0,20).map(h=>{
+            const r=h.results||{},date=new Date(h.timestamp).toLocaleString('fr-FR');
+            return `<tr class="text-xs text-gray-400"><td class="py-2 pr-4">${date}</td><td class="py-2 pr-4">${r.target_info||'—'}</td><td class="py-2 pr-4">${r.documents_processed||0}</td><td class="py-2"><span class="text-green-400 font-medium">${r.relevant_found||0}</span></td></tr>`;
+        }).join('');
+    } catch(e){}
+}
+
+function showToast(msg,type) {
+    const t=document.getElementById('toast');
+    t.textContent=msg;t.className='toast '+type;t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'),3500);
+}
+</script>
+</body>
+</html>

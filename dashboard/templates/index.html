@@ -39,21 +39,13 @@
 
             <!-- Navigation -->
             <nav class="flex-1 px-4 py-6 space-y-2">
+                <a href="/campagne" class="nav-btn">
+                    <i data-lucide="crosshair" class="w-5 h-5 mx-auto"></i>
+                    <span class="text-xs mt-1 block">Campagne</span>
+                </a>
                 <button class="nav-btn active" data-section="crawl">
                     <i data-lucide="globe" class="w-5 h-5 mx-auto"></i>
-                    <span class="text-xs mt-1 block">Crawling</span>
-                </button>
-                <button class="nav-btn" data-section="filter">
-                    <i data-lucide="filter" class="w-5 h-5 mx-auto"></i>
-                    <span class="text-xs mt-1 block">Filtrage</span>
-                </button>
-                <button class="nav-btn" data-section="ai">
-                    <i data-lucide="brain" class="w-5 h-5 mx-auto"></i>
-                    <span class="text-xs mt-1 block">IA</span>
-                </button>
-                <button class="nav-btn" data-section="batch">
-                    <i data-lucide="layers" class="w-5 h-5 mx-auto"></i>
-                    <span class="text-xs mt-1 block">Performance</span>
+                    <span class="text-xs mt-1 block">Scraping</span>
                 </button>
                 <button class="nav-btn" data-section="results">
                     <i data-lucide="bar-chart-2" class="w-5 h-5 mx-auto"></i>
@@ -62,10 +54,6 @@
                 <button class="nav-btn" data-section="documents">
                     <i data-lucide="file-text" class="w-5 h-5 mx-auto"></i>
                     <span class="text-xs mt-1 block">Documents</span>
-                </button>
-                <button class="nav-btn" data-section="config">
-                    <i data-lucide="settings" class="w-5 h-5 mx-auto"></i>
-                    <span class="text-xs mt-1 block">Config IA</span>
                 </button>
             </nav>
 
@@ -103,6 +91,21 @@
         <main class="p-6 w-full">
             <!-- Crawling Section -->
             <div id="crawl-section" class="content-section active">
+
+                <!-- Bandeau campagne active -->
+                <div id="campagne-active-banner" class="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-4 flex items-start gap-4">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i data-lucide="crosshair" class="w-4 h-4 text-red-500"></i>
+                            <span class="text-sm font-semibold text-white">Campagne active : <span id="banner-campagne-nom" class="text-red-400">chargement...</span></span>
+                            <a href="/campagne" class="ml-auto text-xs text-gray-400 hover:text-white flex items-center gap-1 border border-gray-600 rounded px-2 py-0.5 hover:border-gray-400 transition-colors">
+                                <i data-lucide="pencil" class="w-3 h-3"></i> Modifier
+                            </a>
+                        </div>
+                        <div class="flex flex-wrap gap-1" id="banner-mots-cles"></div>
+                    </div>
+                </div>
+
                 <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
                     <h3 class="text-xl font-semibold mb-6 text-white">Paramètres de Crawling</h3>
                     
@@ -328,20 +331,28 @@
                         </div>
                     </div>
 
-                    <!-- Energy Keywords -->
-                    <div class="mt-6">
-                        <label class="block text-sm font-medium text-gray-300 mb-2">Mots-clés énergétiques</label>
-                        <textarea name="energy_keywords" rows="4"
-                                  class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-primary focus:border-transparent">chaufferie biomasse
-réseau de chaleur
-bois énergie
-projet énergétique collectif
-chaudière bois
-chauffage collectif
-granulés
-plaquettes
-pellets
-énergie renouvelable</textarea>
+                    <!-- Mots-clés depuis search_config.json -->
+                    <div class="mt-6 p-4 bg-gray-900 rounded-lg border border-gray-700">
+                        <div class="flex items-center justify-between mb-3">
+                            <label class="text-sm font-medium text-gray-300 flex items-center gap-2">
+                                <i data-lucide="tag" class="w-4 h-4 text-red-400"></i>
+                                Mots-clés actifs <span class="text-xs text-gray-500">(depuis Campagne)</span>
+                            </label>
+                            <a href="/campagne" class="text-xs text-red-400 hover:text-red-300">Modifier →</a>
+                        </div>
+                        <div id="filter-mots-prioritaires" class="mb-2">
+                            <span class="text-xs text-gray-500 mr-1">Prioritaires :</span>
+                            <span class="text-xs text-gray-400 italic">chargement...</span>
+                        </div>
+                        <div id="filter-mots-secondaires" class="mb-2">
+                            <span class="text-xs text-gray-500 mr-1">Secondaires :</span>
+                            <span class="text-xs text-gray-400 italic">chargement...</span>
+                        </div>
+                        <div id="filter-mots-budget">
+                            <span class="text-xs text-gray-500 mr-1">Budget :</span>
+                            <span class="text-xs text-gray-400 italic">chargement...</span>
+                        </div>
+                        <input type="hidden" name="energy_keywords" id="energy_keywords_hidden">
                     </div>
                 </div>
             </div>
@@ -686,6 +697,49 @@ pellets
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
+
+        // Charger la campagne active depuis search_config.json
+        async function chargerCampagneActive() {
+            try {
+                const r = await fetch('/api/config/search');
+                if (!r.ok) return;
+                const cfg = await r.json();
+                const mk = cfg.mots_cles || {};
+                const prioritaires = mk.prioritaires || [];
+                const secondaires = mk.secondaires || [];
+                const budget = mk.budget || [];
+                const tous = [...prioritaires, ...secondaires, ...budget];
+
+                // Bandeau en haut
+                document.getElementById('banner-campagne-nom').textContent = cfg.nom_campagne || '—';
+                const bannerMots = document.getElementById('banner-mots-cles');
+                bannerMots.innerHTML = prioritaires.map(m =>
+                    `<span style="background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:9999px;font-size:11px;">${m}</span>`
+                ).join('') + secondaires.map(m =>
+                    `<span style="background:#1c1917;color:#a8a29e;padding:2px 8px;border-radius:9999px;font-size:11px;">${m}</span>`
+                ).join('');
+
+                // Bloc mots-clés dans Filtrage
+                const tag = (m, color) => `<span style="background:${color};padding:2px 8px;border-radius:9999px;font-size:11px;margin:2px;display:inline-block;">${m}</span>`;
+                document.getElementById('filter-mots-prioritaires').innerHTML =
+                    `<span class="text-xs text-gray-500 mr-1">Prioritaires :</span>` +
+                    (prioritaires.length ? prioritaires.map(m => tag(m, '#7f1d1d')).join('') : '<span class="text-xs text-gray-600 italic">aucun</span>');
+                document.getElementById('filter-mots-secondaires').innerHTML =
+                    `<span class="text-xs text-gray-500 mr-1">Secondaires :</span>` +
+                    (secondaires.length ? secondaires.map(m => tag(m, '#1c1917')).join('') : '<span class="text-xs text-gray-600 italic">aucun</span>');
+                document.getElementById('filter-mots-budget').innerHTML =
+                    `<span class="text-xs text-gray-500 mr-1">Budget :</span>` +
+                    (budget.length ? budget.map(m => tag(m, '#14532d')).join('') : '<span class="text-xs text-gray-600 italic">aucun</span>');
+
+                // Alimenter le champ caché pour collectConfig()
+                document.getElementById('energy_keywords_hidden').value = tous.join('\n');
+
+            } catch(e) {
+                document.getElementById('banner-campagne-nom').textContent = 'Erreur de chargement';
+            }
+        }
+
+        chargerCampagneActive();
 
         // Crawling mode toggle
         document.querySelectorAll('input[name="crawling_mode"]').forEach(radio => {

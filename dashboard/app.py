@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import threading
 from threading import Thread
@@ -7,7 +8,25 @@ import time
 import io
 import yaml
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect
+
+# Config loader centralisé
+_DASHBOARD_ROOT = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_DASHBOARD_ROOT)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+try:
+    from config.config_loader import (
+        load_config as _load_search_config,
+        save_config as _save_search_config,
+        reset_config as _reset_search_config,
+        get_presets as _get_presets,
+    )
+    _SEARCH_CONFIG_OK = True
+except Exception as _sc_err:
+    print(f"[dashboard] config_loader indisponible : {_sc_err}")
+    _SEARCH_CONFIG_OK = False
 from werkzeug.utils import secure_filename
 import requests
 from bs4 import BeautifulSoup
@@ -947,18 +966,149 @@ def save_history(history):
         json.dump(history, f)
 
 def run_analysis(config):
-    """Run analysis in background thread"""
+    """Run analysis in background thread using ScraperCore"""
     def _run():
         try:
-            # Initialize analysis
+            status_queue.put({'status': 'running', 'message': '🚀 Initialisation du scraper...', 'timestamp': datetime.now().isoformat()})
+
+            # Charger ScraperCore depuis la config centralisée
+            try:
+                from scraper_core import ScraperCore
+                scraper = ScraperCore()
+                status_queue.put({'status': 'running', 'message': f'✅ Config chargée — mots prioritaires : {scraper.mots_cles["prioritaires"][:3]}', 'timestamp': datetime.now().isoformat()})
+            except Exception as e:
+                status_queue.put({'status': 'error', 'message': f'❌ Erreur chargement ScraperCore : {e}', 'timestamp': datetime.now().isoformat()})
+                return
+
+            crawling_config = config.get('crawling', {})
+            mode = crawling_config.get('mode', 'single')
+
+            # Construire la liste des cibles (url, commune, dept)
+            targets = []
+            if mode == 'department':
+                dept_config = crawling_config.get('department', {})
+                dept_code = dept_config.get('code', '63')
+                min_population = dept_config.get('min_population', 5000)
+                dept_name = get_department_name(dept_code)
+                cities = get_cities_by_department(dept_code, min_population)
+                status_queue.put({'status': 'running', 'message': f'📍 Mode département : {dept_name} — {len(cities)} communes ≥ {min_population} hab.', 'timestamp': datetime.now().isoformat()})
+                for city in cities:
+                    city_url = find_city_url(city['name'], dept_code, use_cache=True)
+                    if city_url:
+                        targets.append({'url': city_url, 'commune': city['name'], 'dept': dept_code})
+                    else:
+                        status_queue.put({'status': 'warning', 'message': f'⚠️ URL introuvable pour {city["name"]}, ignorée', 'timestamp': datetime.now().isoformat()})
+            else:
+                predefined_urls = crawling_config.get('predefined_urls', [])
+                if not predefined_urls:
+                    status_queue.put({'status': 'error', 'message': '❌ Aucune URL fournie', 'timestamp': datetime.now().isoformat()})
+                    return
+                for url in predefined_urls:
+                    url = url.strip()
+                    if url:
+                        from urllib.parse import urlparse
+                        commune = urlparse(url).netloc.replace('www.', '').split('.')[0].capitalize()
+                        targets.append({'url': url, 'commune': commune, 'dept': None})
+
+            if not targets:
+                status_queue.put({'status': 'error', 'message': '❌ Aucune cible valide à scraper', 'timestamp': datetime.now().isoformat()})
+                return
+
+            status_queue.put({'status': 'running', 'message': f'🎯 {len(targets)} site(s) à scraper', 'timestamp': datetime.now().isoformat()})
+
+            # Dossier de sortie
+            output_dir = os.path.join(_PROJECT_ROOT, 'data', 'resultats')
+            os.makedirs(output_dir, exist_ok=True)
+
+            all_results = []
+            total = len(targets)
+
+            for i, target in enumerate(targets, 1):
+                status_queue.put({'status': 'running', 'message': f'[{i}/{total}] 🔍 Scraping {target["commune"]} ({target["url"]})...', 'timestamp': datetime.now().isoformat()})
+
+                def cb(msg):
+                    status_queue.put({'status': 'running', 'message': f'  ↳ {msg}', 'timestamp': datetime.now().isoformat()})
+
+                try:
+                    docs = scraper.scraper_site(target['url'], target['commune'], target['dept'], status_callback=cb)
+                    pertinents = [d for d in docs if d.get('pertinent')]
+                    status_queue.put({'status': 'running', 'message': f'  ✅ {target["commune"]} : {len(docs)} docs trouvés, {len(pertinents)} pertinents', 'timestamp': datetime.now().isoformat()})
+                    all_results.extend(docs)
+                except Exception as exc:
+                    status_queue.put({'status': 'warning', 'message': f'  ⚠️ Erreur sur {target["commune"]} : {exc}', 'timestamp': datetime.now().isoformat()})
+
+            # ── Analyse IA (Ollama) sur les docs pertinents ──────────────────
+            pertinents_scraping = [d for d in all_results if d.get('pertinent')]
+            seuil_ia = config.get('ai', {}).get('score_threshold', 7)
+            model_ia = config.get('ai', {}).get('model', 'mistral')
+
+            if pertinents_scraping and check_ollama_available():
+                status_queue.put({'status': 'running', 'message': f'🤖 Analyse IA de {len(pertinents_scraping)} document(s) pertinent(s) avec {model_ia}...', 'timestamp': datetime.now().isoformat()})
+                for idx, doc in enumerate(pertinents_scraping, 1):
+                    texte = doc.get('texte', '')
+                    if not texte or len(texte) < 100:
+                        continue
+                    try:
+                        status_queue.put({'status': 'running', 'message': f'  🤖 [{idx}/{len(pertinents_scraping)}] IA analyse : {doc.get("commune","")} — {doc.get("nom_fichier","")[:40]}', 'timestamp': datetime.now().isoformat()})
+                        analyse_ia = analyze_document_with_ollama(texte, model=model_ia)
+                        doc['ia_pertinent'] = analyse_ia.get('ia_pertinent', False)
+                        doc['ia_score'] = analyse_ia.get('ia_score', 0)
+                        doc['ia_resume'] = analyse_ia.get('ia_resume', '')
+                        doc['ia_justification'] = analyse_ia.get('ia_justification', '')
+                    except Exception as e_ia:
+                        status_queue.put({'status': 'warning', 'message': f'  ⚠️ IA échouée pour {doc.get("nom_fichier","")}: {e_ia}', 'timestamp': datetime.now().isoformat()})
+            elif pertinents_scraping:
+                status_queue.put({'status': 'warning', 'message': '⚠️ Ollama non disponible — analyse IA ignorée. Résultats basés sur mots-clés uniquement.', 'timestamp': datetime.now().isoformat()})
+                # Fallback : utiliser le score mots-clés comme ia_score (normalisé sur 10)
+                for doc in pertinents_scraping:
+                    raw = doc.get('score', 0)
+                    doc['ia_score'] = min(10, raw * 2)
+                    doc['ia_pertinent'] = raw >= scraper.seuil_confiance
+                    doc['ia_resume'] = f"Score mots-clés : {raw} — mots trouvés : {', '.join(doc.get('mots_trouves', []))}"
+
+            # Sauvegarde globale (tous les docs, IA renseignée sur les pertinents)
+            if all_results:
+                saved_path = scraper.sauvegarder_resultats(all_results, output_dir)
+                status_queue.put({'status': 'running', 'message': f'💾 Résultats sauvegardés : {saved_path}', 'timestamp': datetime.now().isoformat()})
+
+            pertinents_total = [d for d in all_results if d.get('ia_pertinent') or d.get('pertinent')]
+            ia_valides = [d for d in all_results if d.get('ia_pertinent')]
+            status_queue.put({
+                'status': 'completed',
+                'message': f'🏁 Terminé — {len(ia_valides)} pertinents IA / {len(pertinents_total)} pertinents mots-clés / {len(all_results)} docs sur {total} site(s)',
+                'timestamp': datetime.now().isoformat()
+            })
+
+            # Historique
+            history = load_history()
+            history.append({
+                'timestamp': datetime.now().isoformat(),
+                'config': config,
+                'status': 'completed',
+                'results': {
+                    'documents_processed': len(all_results),
+                    'relevant_found': len(pertinents_total),
+                    'mode': mode,
+                    'target_info': f'{total} site(s)'
+                }
+            })
+            save_history(history)
+
+        except Exception as e:
+            status_queue.put({'status': 'error', 'message': f'❌ Erreur analyse : {str(e)}', 'timestamp': datetime.now().isoformat()})
+
+    Thread(target=_run).start()
+
+def run_analysis_LEGACY(config):
+    """LEGACY — ancienne version conservée pour référence"""
+    def _run():
+        try:
             status_queue.put({
                 'status': 'running',
                 'message': 'Initializing crawler...',
                 'timestamp': datetime.now().isoformat()
             })
             time.sleep(1)
-            
-            # Get crawling configuration
             crawling_config = config.get('crawling', {})
             mode = crawling_config.get('mode', 'single')
             
@@ -1945,10 +2095,13 @@ def create_test_documents_for_city(directory, city_dir, base_url, city_name=None
 
 @app.route('/')
 def index():
-    """Main dashboard page"""
-    config = load_config()
-    history = load_history()
-    return render_template('index.html', config=config, history=history)
+    """Redirect to campagne page"""
+    return redirect('/campagne')
+
+@app.route('/scraping')
+def scraping():
+    """Redirect to campagne (fusionné)"""
+    return redirect('/campagne')
 
 @app.route('/api/start', methods=['POST'])
 def start_analysis():
@@ -1974,59 +2127,59 @@ def get_history():
 
 @app.route('/api/documents')
 def get_documents():
-    """Get list of all PDF documents with analysis results from all city directories"""
+    """Get list of all documents from resultats/*.json files (real scraper output)"""
     documents = []
-    
-    # Base directory containing all city folders
-    base_data_dir = '../openclaw_backup_20260201_1306/data/pdf_texts'
-    
-    if os.path.exists(base_data_dir):
-        # Iterate through all city directories
-        for city_dir in os.listdir(base_data_dir):
-            city_path = os.path.join(base_data_dir, city_dir)
-            
-            # Skip if not a directory
-            if not os.path.isdir(city_path):
+    resultats_dir = os.path.join(_PROJECT_ROOT, 'data', 'resultats')
+
+    if not os.path.exists(resultats_dir):
+        return jsonify([])
+
+    # Collect all result files, sorted newest first
+    result_files = sorted(
+        [f for f in os.listdir(resultats_dir) if f.endswith('.json')],
+        reverse=True
+    )
+
+    seen_urls = set()
+    for filename in result_files:
+        filepath = os.path.join(resultats_dir, filename)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # Each file is a list of document dicts
+            if not isinstance(data, list):
                 continue
-                
-            # Process all JSON files in this city directory
-            for filename in os.listdir(city_path):
-                if filename.endswith('.json'):
-                    filepath = os.path.join(city_path, filename)
-                    try:
-                        with open(filepath, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-                            
-                        # Extract relevant information
-                        doc_info = {
-                            'id': f"{city_dir}_{filename.replace('.json', '')}",
-                            'filename': filename,
-                            'title': data.get('nom_fichier', data.get('title', 'Sans titre')),
-                            'source_url': data.get('source_url', ''),
-                            'site_url': data.get('site_url', ''),
-                            'status': data.get('statut', data.get('status', '')),
-                            'ia_pertinent': data.get('ia_pertinent', False),
-                            'ia_score': data.get('ia_score', 0),
-                            'ia_resume': data.get('ia_resume', ''),
-                            'ia_justification': data.get('ia_justification', ''),
-                            'ia_timestamp': data.get('ia_timestamp', ''),
-                            'text_length': len(data.get('texte', data.get('text', ''))),
-                            'has_text': bool(data.get('texte', data.get('text', '')).strip()),
-                            'city_name': data.get('city_name', city_dir.replace('www.', '').replace('_', ' ').title()),
-                            'city_population': data.get('city_population', 'N/A'),
-                            'date_detection': data.get('date_detection', ''),
-                            'city_directory': city_dir
-                        }
-                        
-                        # Only include documents with score >= 1 (1/10 or higher)
-                        if doc_info['ia_score'] >= 1:
-                            documents.append(doc_info)
-                        else:
-                            print(f"[FILTER] Excluding low-score document from API: {doc_info['title']} (score: {doc_info['ia_score']})")
-                    except Exception as e:
-                        print(f"Error reading {city_dir}/{filename}: {e}")
-    
-    # Sort by relevance score and timestamp
+            for i, doc in enumerate(data):
+                url = doc.get('source_url', '')
+                # Deduplicate across files
+                if url and url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                # Normalise field names (scraper uses 'score'/'pertinent', old format uses 'ia_score'/'ia_pertinent')
+                ia_score = doc.get('ia_score', doc.get('score', 0)) or 0
+                ia_pertinent = doc.get('ia_pertinent', doc.get('pertinent', False))
+                doc_info = {
+                    'id': f"{filename.replace('.json','')}_{i}",
+                    'title': doc.get('nom_fichier', doc.get('title', url or 'Sans titre')),
+                    'source_url': url,
+                    'site_url': doc.get('site_url', ''),
+                    'commune': doc.get('commune', ''),
+                    'departement': doc.get('departement', ''),
+                    'status': doc.get('statut', doc.get('status', 'completed')),
+                    'ia_pertinent': ia_pertinent,
+                    'ia_score': ia_score,
+                    'ia_resume': doc.get('ia_resume', doc.get('texte', '')[:200] if doc.get('texte') else ''),
+                    'ia_justification': doc.get('ia_justification', ''),
+                    'mots_trouves': doc.get('mots_trouves', []),
+                    'date_detection': doc.get('date_detection', ''),
+                    'document_type': doc.get('document_type', ''),
+                    'text_length': len(doc.get('texte', '')),
+                }
+                documents.append(doc_info)
+        except Exception as e:
+            print(f"[documents] Erreur lecture {filename}: {e}")
+
     documents.sort(key=lambda x: (x['ia_pertinent'], x['ia_score']), reverse=True)
     return jsonify(documents)
 
@@ -2225,6 +2378,193 @@ def purge_documents():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/campagne')
+def campagne():
+    """Page de gestion de la campagne de recherche"""
+    return render_template('campagne.html')
+
+
+@app.route('/api/config/search', methods=['GET'])
+def get_search_config():
+    """Retourne la configuration de campagne complète"""
+    if not _SEARCH_CONFIG_OK:
+        return jsonify({'error': 'config_loader non disponible'}), 500
+    try:
+        config = _load_search_config(
+            os.path.join(_PROJECT_ROOT, 'config', 'search_config.json')
+        )
+        return jsonify(config)
+    except FileNotFoundError:
+        return jsonify({'error': 'search_config.json introuvable'}), 404
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/config/search', methods=['POST'])
+def post_search_config():
+    """Sauvegarde la configuration de campagne"""
+    if not _SEARCH_CONFIG_OK:
+        return jsonify({'error': 'config_loader non disponible'}), 500
+    try:
+        data = request.get_json(force=True)
+        if not data:
+            return jsonify({'error': 'Corps JSON manquant'}), 400
+
+        config_path = os.path.join(_PROJECT_ROOT, 'config', 'search_config.json')
+
+        # Charger la config existante pour préserver les champs non gérés par le formulaire
+        try:
+            existing = _load_search_config(config_path)
+        except Exception:
+            existing = {}
+
+        # Fusionner : les valeurs du formulaire écrasent l'existant
+        merged = {**existing, **data}
+
+        # S'assurer que prompt_ia est toujours présent
+        if 'prompt_ia' not in merged or not merged['prompt_ia']:
+            merged['prompt_ia'] = existing.get('prompt_ia', (
+                "Tu es un expert en analyse de documents administratifs français. "
+                "Réponds UNIQUEMENT au format JSON : "
+                "{\"pertinent\": true/false, \"score\": 0-10, \"resume\": \"...\", \"justification\": \"...\"}"
+            ))
+
+        ok = _save_search_config(merged, config_path)
+        if ok:
+            return jsonify({'message': 'Configuration sauvegardée avec succès'})
+        return jsonify({'error': 'Échec de la sauvegarde (champs obligatoires manquants ?)'}), 422
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/config/search/reset', methods=['POST'])
+def reset_search_config():
+    """Remet la configuration par défaut (chaufferies biomasse)"""
+    if not _SEARCH_CONFIG_OK:
+        return jsonify({'error': 'config_loader non disponible'}), 500
+    try:
+        config = _reset_search_config(
+            os.path.join(_PROJECT_ROOT, 'config', 'search_config.json')
+        )
+        return jsonify({'message': 'Configuration réinitialisée', 'config': config})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/config/presets', methods=['GET'])
+def get_config_presets():
+    """Retourne la liste des presets de campagne disponibles"""
+    if not _SEARCH_CONFIG_OK:
+        return jsonify({'error': 'config_loader non disponible'}), 500
+    try:
+        presets = _get_presets()
+        return jsonify(presets)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/config/search/test', methods=['POST'])
+def test_search_config():
+    """Lance un mini-scraping de test sur 3 communes avec la config fournie"""
+    if not _SEARCH_CONFIG_OK:
+        return jsonify({'error': 'config_loader non disponible'}), 500
+    try:
+        config = request.get_json(force=True) or {}
+        mots_prioritaires = config.get('mots_cles', {}).get('prioritaires', [])
+        mots_secondaires = config.get('mots_cles', {}).get('secondaires', [])
+        mots_budget = config.get('mots_cles', {}).get('budget', [])
+        tous_mots = mots_prioritaires + mots_secondaires + mots_budget
+        seuil = int(config.get('parametres_scraping', {}).get('seuil_confiance_min', 2))
+
+        # Communes de test avec textes simulés de fallback
+        communes_test = [
+            {
+                'nom': 'Thiers', 'dept': '63',
+                'url': 'https://www.thiers.fr',
+                'texte_fallback': (
+                    "Commune de Thiers, Puy-de-Dôme. Conseil municipal. "
+                    "Délibérations relatives aux marchés publics, budget communal, "
+                    "investissement infrastructure, subvention ademe, "
+                    "projet chaufferie biomasse réseau chaleur bois énergie."
+                ),
+            },
+            {
+                'nom': 'Ambert', 'dept': '63',
+                'url': 'https://www.ambert.fr',
+                'texte_fallback': (
+                    "Ville d'Ambert. Ordre du jour conseil municipal. "
+                    "Vote budget primitif, crédit investissement, "
+                    "modernisation chauffage collectif, chaudière bois granulés plaquettes."
+                ),
+            },
+            {
+                'nom': 'Issoire', 'dept': '63',
+                'url': 'https://www.issoire.fr',
+                'texte_fallback': (
+                    "Mairie d'Issoire. Délibération n°2024-045. "
+                    "Approbation étude faisabilité chaufferie collective biomasse. "
+                    "Fonds chaleur ADEME, réseau chaleur renouvelable, programmation travaux."
+                ),
+            },
+        ]
+
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        resultats_test = []
+        for commune in communes_test:
+            texte = None
+            source = 'simulation'
+            try:
+                session = requests.Session()
+                session.headers.update({
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                    'Accept-Language': 'fr-FR,fr;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                })
+                r = session.get(commune['url'], timeout=6, verify=False, allow_redirects=True)
+                if r.status_code == 200 and r.text:
+                    soup = BeautifulSoup(r.text, 'html.parser')
+                    for tag in soup(['script', 'style', 'nav', 'footer']):
+                        tag.decompose()
+                    texte = soup.get_text(separator=' ', strip=True)[:5000]
+                    source = 'live'
+            except Exception:
+                pass
+
+            # Fallback sur texte simulé si le site est inaccessible
+            if not texte or len(texte) < 50:
+                texte = commune['texte_fallback']
+                source = 'simulation'
+
+            texte_lower = texte.lower()
+            mots_trouves = [m for m in tous_mots if m.lower() in texte_lower]
+            score = (
+                sum(2 for m in mots_prioritaires if m.lower() in texte_lower)
+                + sum(1 for m in mots_secondaires if m.lower() in texte_lower)
+                + sum(1 for m in mots_budget if m.lower() in texte_lower)
+            )
+
+            resultats_test.append({
+                'commune': commune['nom'],
+                'url': commune['url'],
+                'dept': commune['dept'],
+                'score': score,
+                'pertinent': score >= seuil,
+                'mots_trouves': mots_trouves,
+                'statut': 'ok',
+                'source': source,
+            })
+
+        return jsonify({
+            'resultats': resultats_test,
+            'mots_testes': tous_mots,
+            'seuil': seuil,
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5053)

@@ -1,0 +1,14 @@
+ai:
+  model: mistral
+  score_threshold: 5
+  search_depth: leger
+crawling:
+  mode: single
+  predefined_urls:
+  - https://www.ville-riom.fr
+filtering:
+  energy_keywords:
+  - energie
+  - solaire
+  - biomasse
+  - chaleur
