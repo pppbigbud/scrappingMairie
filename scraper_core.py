@@ -510,41 +510,83 @@ class ScraperCore:
         Scrape un site municipal avec priorisation des sources fraîches :
         1. Flux RSS  2. Actualités  3. Délibérations  4. Bulletins PDF  5. Accueil
         Filtre par fenêtre temporelle, détecte signaux faibles, calcule score composite.
+        Logs diagnostics complets via status_callback.
         """
         self._reload_config()
 
         def _log(msg: str, level: str = "info") -> None:
             getattr(log, level)(msg)
             if status_callback:
-                status_callback(msg)
+                status_callback(msg, level)
 
-        _log(f"🔍 Scraping {commune} ({url}) | fenêtre {self.fenetre_jours}j")
+        def _extrait_30_mots(texte: str) -> str:
+            mots = texte.split()[:30]
+            return " ".join(mots) + ("…" if len(texte.split()) > 30 else "")
+
+        # ── Compteurs bilan ────────────────────────────────────────────────────
+        bilan = {
+            "pages_visitees": 0,
+            "pdfs_tentes": 0,
+            "pdfs_reussis": 0,
+            "pdfs_scannes": 0,
+            "docs_avec_mots_cles": 0,
+            "docs_retenus": 0,
+            "docs_ecartes": 0,
+            "score_max": 0,
+        }
+
         session = self._make_session()
         found: List[Dict] = []
         seen_urls: set = set()
         base_netloc = urlparse(url).netloc
 
-        # ── Étape 0 : Chargement page d'accueil ───────────────────────────────
+        # ── Étape 0 : Connexion page d'accueil ────────────────────────────────
+        _log(f"🔍 [{commune}] Connexion → {url}")
+        t0 = time.time()
         try:
             time.sleep(random.uniform(self.delai * 0.5, self.delai * 1.5))
             response = session.get(url, timeout=self.timeout)
+            elapsed_ms = int((time.time() - t0) * 1000)
+            taille = len(response.content)
+            has_body = "<body" in response.text.lower()
+
+            _log(
+                f"   ↳ HTTP {response.status_code} | {taille:,} octets | {elapsed_ms} ms"
+                f" | body={'✅' if has_body else '❌'}"
+            )
+            if taille < 1000:
+                _log(
+                    f"   ⚠️ Contenu suspect ({taille} octets) — possible blocage ou redirection",
+                    "warning",
+                )
+            if response.status_code == 403:
+                _log(f"   ❌ Accès refusé (403) — site bloqué", "warning")
+                return []
             response.raise_for_status()
         except requests.RequestException as exc:
-            _log(f"Erreur connexion {url} : {exc}", "warning")
+            _log(f"   ❌ Erreur connexion {url} : {exc}", "warning")
             return []
 
+        bilan["pages_visitees"] += 1
         home_soup = BeautifulSoup(response.text, "html.parser")
 
-        # ── Étape 1 : Flux RSS (priorité maximale) ────────────────────────────
+        # ── Étape 1 : Flux RSS ────────────────────────────────────────────────
         rss_entries = self.detecter_flux_rss(url, home_soup, session)
         if rss_entries:
-            _log(f"📡 RSS : {len(rss_entries)} entrées trouvées")
+            _log(f"📡 RSS : {len(rss_entries)} entrée(s) détectée(s)")
+        else:
+            _log("   ℹ️ Aucun RSS détecté — passage aux sections HTML")
+
+        rss_ecartees = 0
+        rss_retenues = 0
         for entry in rss_entries:
             if not self.est_dans_fenetre(entry.get("date_publication")):
+                rss_ecartees += 1
                 continue
             texte = entry.get("texte", "") + " " + entry.get("titre", "")
             analyse = self.analyser_texte(texte)
             if not analyse["pertinent"]:
+                rss_ecartees += 1
                 continue
             sf = self.analyser_signaux_faibles(texte)
             sc = self.calculer_score_composite(analyse, sf, entry.get("date_publication"), "rss")
@@ -558,21 +600,67 @@ class ScraperCore:
             )
             found.append(doc)
             seen_urls.add(entry.get("url", ""))
+            rss_retenues += 1
+            bilan["docs_retenus"] += 1
+            bilan["score_max"] = max(bilan["score_max"], sc["score_composite"])
 
-        # ── Étape 2 : Sources prioritaires (actualités, délibérations, bulletins) ──
+        if rss_entries:
+            _log(
+                f"   ↳ RSS : {rss_retenues} retenue(s), {rss_ecartees} écartée(s)"
+                f" (hors fenêtre ou non pertinent)"
+            )
+
+        # ── Étape 2 : Sources prioritaires ────────────────────────────────────
         sources_prioritaires = self._get_sources_prioritaires(url, home_soup, base_netloc)
+        if sources_prioritaires:
+            urls_sections = [u for u, _ in sources_prioritaires]
+            _log(f"📂 {len(sources_prioritaires)} section(s) à explorer : {urls_sections}")
+        else:
+            _log("   ℹ️ Aucune section prioritaire détectée (délibérations, actualités…)")
+
         for section_url, section_type in sources_prioritaires:
             if section_url in seen_urls:
                 continue
             try:
                 time.sleep(random.uniform(0.5, 1.2))
                 r = session.get(section_url, timeout=self.timeout)
-                if r.status_code != 200:
-                    continue
-                sub_soup = BeautifulSoup(r.text, "html.parser")
-                _log(f"📂 Section {section_type} : {section_url}")
+                bilan["pages_visitees"] += 1
 
-                # Liens documents dans cette section
+                if r.status_code != 200:
+                    _log(
+                        f"   ⚠️ Section {section_type} HTTP {r.status_code} → {section_url}",
+                        "warning",
+                    )
+                    continue
+
+                texte_section = self._extraire_texte_html(r.text)
+                nb_mots = len(texte_section.split())
+                extrait = _extrait_30_mots(texte_section) if status_callback else ""
+
+                if nb_mots < 100:
+                    _log(
+                        f"   ⚠️ Section [{section_type}] {nb_mots} mots — vide ou non lisible"
+                        f" | {section_url}",
+                        "warning",
+                    )
+                else:
+                    _log(
+                        f"   📂 Section [{section_type}] {nb_mots} mots | {section_url}"
+                    )
+                    if status_callback and extrait:
+                        _log(f'      Extrait : "{extrait}"')
+
+                # Mots-clés dans la section
+                analyse_section = self.analyser_texte(texte_section)
+                if analyse_section["mots_trouves"]:
+                    _log(
+                        f"      🔑 Mots-clés section : {analyse_section['mots_trouves']}"
+                    )
+                else:
+                    _log("      — Aucun mot-clé trouvé dans cette section")
+
+                sub_soup = BeautifulSoup(r.text, "html.parser")
+
                 for link in sub_soup.find_all("a", href=True):
                     href = link.get("href", "")
                     full_url = urljoin(url, href)
@@ -582,38 +670,88 @@ class ScraperCore:
                         continue
                     seen_urls.add(full_url)
 
-                    if self._is_document(full_url):
-                        # Filtre date sur nom de fichier avant téléchargement
-                        date_fname = self.extraire_date(url=full_url)
-                        if not self.est_dans_fenetre(date_fname):
-                            continue
-                        texte = self._extraire_texte_document(full_url, session, _log)
-                        if not texte:
-                            continue
-                        analyse = self.analyser_texte(texte)
-                        if not analyse["pertinent"]:
-                            continue
-                        page_soup = None
-                        date_pub = self.extraire_date(soup=page_soup, texte=texte, url=full_url)
-                        if not self.est_dans_fenetre(date_pub):
-                            continue
-                        sf = self.analyser_signaux_faibles(texte)
-                        sc = self.calculer_score_composite(analyse, sf, date_pub, section_type)
-                        doc = self._build_result(
-                            os.path.basename(urlparse(full_url).path) or full_url,
-                            full_url, url, commune, dept, texte, analyse,
-                            source_type=section_type,
-                            date_pub=date_pub,
-                            signaux_faibles=sf,
-                            score_composite=sc,
+                    if not self._is_document(full_url):
+                        continue
+
+                    # ── PDF / Document ─────────────────────────────────────
+                    fname = os.path.basename(urlparse(full_url).path) or full_url
+                    _log(f"      📎 PDF détecté : {fname[:60]}")
+                    bilan["pdfs_tentes"] += 1
+
+                    date_fname = self.extraire_date(url=full_url)
+                    if not self.est_dans_fenetre(date_fname):
+                        _log(f"         ↳ ⏭️ Hors fenêtre temporelle (date fichier) — ignoré")
+                        continue
+
+                    texte, nb_pages, nb_chars = self._extraire_texte_document_verbose(
+                        full_url, session, _log
+                    )
+                    if not texte:
+                        bilan["pdfs_scannes"] += 1
+                        continue
+
+                    bilan["pdfs_reussis"] += 1
+
+                    if nb_chars < 100:
+                        _log(
+                            f"         ⚠️ PDF probablement scanné (image) — {nb_chars} car. extraits",
+                            "warning",
                         )
-                        found.append(doc)
-                        _log(f"📄 {doc['nom_fichier'][:50]} | score={sc['score_composite']} | {sf['maturite_emoji']} {sf['maturite_label']}")
+                        bilan["pdfs_scannes"] += 1
 
-            except requests.RequestException:
-                pass
+                    analyse = self.analyser_texte(texte)
+                    d = analyse["details"]
+                    pts_prio = len(d.get("prioritaires", [])) * 2
+                    pts_sec  = len(d.get("secondaires", []))
+                    pts_bud  = len(d.get("budget", []))
+                    score_kw = analyse["score"]
+                    _log(
+                        f"         📊 Score : {pts_prio} pts prioritaires"
+                        f" + {pts_sec} pts secondaires"
+                        f" + {pts_bud} pts budget = {score_kw}"
+                        f" (seuil={self.seuil_confiance})"
+                    )
 
-        # ── Étape 3 : Pages HTML pertinentes de la section ────────────────────
+                    if analyse["mots_trouves"]:
+                        bilan["docs_avec_mots_cles"] += 1
+                        _log(f"         🔑 Mots trouvés : {analyse['mots_trouves']}")
+
+                    if not analyse["pertinent"]:
+                        bilan["docs_ecartes"] += 1
+                        extrait_doc = _extrait_30_mots(texte) if status_callback else ""
+                        _log(
+                            f"         ❌ Écarté (score {score_kw} < seuil {self.seuil_confiance})"
+                            + (f' | Début : "{extrait_doc}"' if extrait_doc else "")
+                        )
+                        continue
+
+                    date_pub = self.extraire_date(texte=texte, url=full_url)
+                    if not self.est_dans_fenetre(date_pub):
+                        _log(f"         ↳ ⏭️ Hors fenêtre temporelle (date contenu) — ignoré")
+                        bilan["docs_ecartes"] += 1
+                        continue
+
+                    sf = self.analyser_signaux_faibles(texte)
+                    sc = self.calculer_score_composite(analyse, sf, date_pub, section_type)
+                    doc = self._build_result(
+                        fname, full_url, url, commune, dept, texte, analyse,
+                        source_type=section_type,
+                        date_pub=date_pub,
+                        signaux_faibles=sf,
+                        score_composite=sc,
+                    )
+                    found.append(doc)
+                    bilan["docs_retenus"] += 1
+                    bilan["score_max"] = max(bilan["score_max"], sc["score_composite"])
+                    _log(
+                        f"         ✅ Retenu | score composite={sc['score_composite']}"
+                        f" | {sf['maturite_emoji']} {sf['maturite_label']}"
+                    )
+
+            except requests.RequestException as exc:
+                _log(f"   ⚠️ Erreur section {section_url} : {exc}", "warning")
+
+        # ── Étape 3 : Pages HTML pertinentes ──────────────────────────────────
         for link in home_soup.find_all("a", href=True):
             full_url = urljoin(url, link.get("href", ""))
             if full_url in seen_urls:
@@ -626,18 +764,40 @@ class ScraperCore:
             try:
                 time.sleep(random.uniform(0.5, 1.0))
                 hr = session.get(full_url, timeout=self.timeout)
+                bilan["pages_visitees"] += 1
                 if hr.status_code != 200:
                     continue
                 page_soup = BeautifulSoup(hr.text, "html.parser")
                 texte = self._extraire_texte_html(hr.text)
-                if not texte or len(texte) < 300:
+                nb_mots = len(texte.split()) if texte else 0
+
+                if not texte or nb_mots < 50:
+                    _log(f"   ⚠️ Page HTML vide ({nb_mots} mots) : {full_url}", "warning")
                     continue
+
                 analyse = self.analyser_texte(texte)
+                d = analyse["details"]
+                pts_prio = len(d.get("prioritaires", [])) * 2
+                pts_sec  = len(d.get("secondaires", []))
+                pts_bud  = len(d.get("budget", []))
+                score_kw = analyse["score"]
+
                 if not analyse["pertinent"]:
+                    bilan["docs_ecartes"] += 1
                     continue
+
+                bilan["docs_avec_mots_cles"] += 1
+                _log(
+                    f"   🌐 HTML pertinent : {full_url} | {nb_mots} mots"
+                    f" | score {pts_prio}+{pts_sec}+{pts_bud}={score_kw}"
+                )
+
                 date_pub = self.extraire_date(soup=page_soup, texte=texte, url=full_url)
                 if not self.est_dans_fenetre(date_pub):
+                    _log(f"      ↳ ⏭️ Hors fenêtre temporelle — ignoré")
+                    bilan["docs_ecartes"] += 1
                     continue
+
                 sf = self.analyser_signaux_faibles(texte)
                 sc = self.calculer_score_composite(analyse, sf, date_pub, "generique")
                 filename = os.path.basename(urlparse(full_url).path) or "page.html"
@@ -650,17 +810,87 @@ class ScraperCore:
                 )
                 doc["document_type"] = "html"
                 found.append(doc)
+                bilan["docs_retenus"] += 1
+                bilan["score_max"] = max(bilan["score_max"], sc["score_composite"])
+                _log(f"      ✅ Retenu | score composite={sc['score_composite']}")
+
             except requests.RequestException:
                 pass
 
-        # Tri par score composite décroissant
+        # ── Bilan par site ─────────────────────────────────────────────────────
         found.sort(key=lambda r: r.get("score_composite", 0), reverse=True)
-        pertinents = [r for r in found if r.get("pertinent")]
+        sep = "─" * 45
+        _log(sep)
+        _log(f"📊 BILAN [{commune}]")
+        _log(f"   🌐 Pages visitées        : {bilan['pages_visitees']}")
         _log(
-            f"✅ Terminé {commune} : {len(found)} docs | {len(pertinents)} pertinents "
-            f"| fenêtre {self.fenetre_jours}j"
+            f"   📄 PDFs tentés           : {bilan['pdfs_tentes']}"
+            f" ({bilan['pdfs_reussis']} réussis,"
+            f" {bilan['pdfs_scannes']} vides/scannés)"
         )
+        _log(f"   🔑 Docs avec mots-clés   : {bilan['docs_avec_mots_cles']}")
+        _log(f"   ✅ Docs retenus          : {bilan['docs_retenus']} (score ≥ {self.seuil_confiance})")
+        _log(f"   ❌ Docs écartés          : {bilan['docs_ecartes']}")
+        _log(f"   🏆 Score max atteint     : {bilan['score_max']} (seuil = {self.seuil_confiance})")
+        _log(sep)
+
         return found
+
+    def _extraire_texte_document_verbose(
+        self,
+        url: str,
+        session: requests.Session,
+        _log,
+    ) -> Tuple[Optional[str], int, int]:
+        """
+        Télécharge et extrait le texte d'un document.
+        Retourne (texte, nb_pages, nb_chars). Logs détaillés via _log.
+        """
+        try:
+            time.sleep(random.uniform(self.delai * 0.5, self.delai))
+            t0 = time.time()
+            r = session.get(url, timeout=self.timeout)
+            elapsed_ms = int((time.time() - t0) * 1000)
+
+            if r.status_code != 200:
+                _log(
+                    f"         ❌ Téléchargement échoué HTTP {r.status_code} ({elapsed_ms} ms)",
+                    "warning",
+                )
+                return None, 0, 0
+
+            _log(f"         ↳ HTTP {r.status_code} | {len(r.content):,} octets | {elapsed_ms} ms")
+
+            if url.lower().endswith(".pdf") or "pdf" in url.lower():
+                try:
+                    import pdfplumber
+                    import io
+                    with pdfplumber.open(io.BytesIO(r.content)) as pdf:
+                        nb_pages = len(pdf.pages)
+                        textes = [p.extract_text() or "" for p in pdf.pages[:10]]
+                    texte = "\n".join(textes).strip()
+                    nb_chars = len(texte)
+                    _log(
+                        f"         ↳ {nb_pages} page(s) | {nb_chars:,} caractères extraits"
+                    )
+                    if nb_chars < 100:
+                        _log(
+                            f"         ⚠️ PDF probablement scanné (image) — texte non lisible",
+                            "warning",
+                        )
+                    return texte or None, nb_pages, nb_chars
+                except Exception as exc:
+                    _log(f"         ⚠️ pdfplumber échoué : {exc}", "warning")
+                    return None, 0, 0
+            else:
+                texte = self._extraire_texte_html(r.text)
+                nb_chars = len(texte)
+                _log(f"         ↳ HTML | {nb_chars:,} caractères extraits")
+                return texte or None, 1, nb_chars
+
+        except requests.RequestException as exc:
+            _log(f"         ❌ Erreur téléchargement : {exc}", "warning")
+            return None, 0, 0
 
     # ── Helpers privés ─────────────────────────────────────────────────────────
 

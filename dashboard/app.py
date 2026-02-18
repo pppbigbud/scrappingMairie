@@ -295,87 +295,101 @@ def scrape_municipal_website(base_url, city_name, status_queue=None, date_filter
         session = requests.Session()
         session.headers.update(headers)
         
-        print(f"Using User-Agent: {headers['User-Agent']}")
-        
+        def _sq(msg, st='running'):
+            print(msg)
+            if status_queue:
+                status_queue.put({'status': st, 'message': msg, 'timestamp': datetime.now().isoformat()})
+
+        def _extrait_30(texte):
+            mots = texte.split()[:30]
+            return ' '.join(mots) + ('…' if len(texte.split()) > 30 else '')
+
+        # ── Connexion initiale ─────────────────────────────────────────────
+        _sq(f'🔍 [{city_name}] Connexion → {base_url}')
+        import time as _time
+        _t0 = _time.time()
         response = session.get(base_url, timeout=30)
+        _elapsed_ms = int((_time.time() - _t0) * 1000)
+        _taille = len(response.content)
+        _has_body = '<body' in response.text.lower()
+        _sq(
+            f'   ↳ HTTP {response.status_code} | {_taille:,} octets | {_elapsed_ms} ms'
+            f' | body={"✅" if _has_body else "❌"}'
+        )
+        if _taille < 1000:
+            _sq(f'   ⚠️ Contenu suspect ({_taille} octets) — possible blocage ou redirection', 'warning')
+        if response.status_code == 403:
+            _sq(f'   ❌ Accès refusé (403) — site bloqué', 'warning')
+            return []
         response.raise_for_status()
-        
-        print(f"Response status: {response.status_code}")
-        
+
         # Use response.text to ensure proper decoding (handles gzip automatically)
         soup = BeautifulSoup(response.text, 'html.parser')
         
         all_links = soup.find_all('a', href=True)
-        msg = f'Found {len(all_links)} total links on main page'
-        print(msg)
-        if status_queue:
-            status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
+        _sq(f'   ↳ {len(all_links)} liens trouvés sur la page principale')
         
         # Use cached priority sections if available, otherwise use defaults
         common_sections = get_priority_sections(domain)
         
-        msg = f'Exploring {len(common_sections)} sections (cache-optimized)'
-        print(msg)
-        if status_queue:
-            status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
+        _sq(f'📂 {len(common_sections)} section(s) à explorer : {common_sections[:5]}')
         
         for section in common_sections:
             section_url = urljoin(base_url, section)
             try:
-                msg = f'Exploring section: {section}'
-                print(msg)
-                if status_queue:
-                    status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
-                
                 time.sleep(random.uniform(1, 2))
                 section_response = session.get(section_url, timeout=15)
                 
                 if section_response.status_code == 200:
+                    _texte_sec = BeautifulSoup(section_response.text, 'html.parser').get_text(separator=' ', strip=True)
+                    _nb_mots_sec = len(_texte_sec.split())
+                    if _nb_mots_sec < 100:
+                        _sq(f'   ⚠️ Section [{section}] {_nb_mots_sec} mots — vide ou non lisible', 'warning')
+                    else:
+                        _sq(f'   📂 Section [{section}] HTTP 200 | {_nb_mots_sec} mots')
+                        _sq(f'      Extrait : "{_extrait_30(_texte_sec)}"')
+                    # Mots-clés dans la section
+                    from config.config_loader import get_mots_cles as _gmk
+                    try:
+                        _mk = _gmk()
+                        _tous_mk = _mk.get('prioritaires', []) + _mk.get('secondaires', []) + _mk.get('budget', [])
+                        _trouves_sec = [m for m in _tous_mk if m.lower() in _texte_sec.lower()]
+                        if _trouves_sec:
+                            _sq(f'      🔑 Mots-clés section : {_trouves_sec}')
+                        else:
+                            _sq('      — Aucun mot-clé trouvé dans cette section')
+                    except Exception:
+                        pass
                     section_soup = BeautifulSoup(section_response.text, 'html.parser')
                     section_links = section_soup.find_all('a', href=True)
                     all_links.extend(section_links)
-                    msg = f'Section {section}: {len(section_links)} links found'
-                    print(msg)
-                    if status_queue:
-                        status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
-                    
-                    # For deliberation and bulletin sections, explore one level deeper to find PDFs in subsections
+                    # For deliberation and bulletin sections, explore one level deeper
                     if 'deliberation' in section.lower() or 'bulletin' in section.lower():
                         subsection_count = 0
-                        for sublink in section_links[:20]:  # Limit to first 20 subsections to avoid too many requests
+                        for sublink in section_links[:20]:
                             subhref = sublink.get('href')
                             if not subhref:
                                 continue
-                            
                             sub_url = urljoin(base_url, subhref)
-                            
-                            # Only explore internal links (same domain)
                             if urlparse(sub_url).netloc == urlparse(base_url).netloc:
                                 try:
                                     time.sleep(random.uniform(0.5, 1))
                                     sub_response = session.get(sub_url, timeout=10)
-                                    
                                     if sub_response.status_code == 200:
                                         sub_soup = BeautifulSoup(sub_response.text, 'html.parser')
                                         sub_links = sub_soup.find_all('a', href=True)
                                         all_links.extend(sub_links)
                                         subsection_count += 1
-                                        
                                         if subsection_count % 5 == 0:
-                                            msg = f'Explored {subsection_count} subsections in {section}'
-                                            print(msg)
-                                            if status_queue:
-                                                status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
+                                            _sq(f'      ↳ {subsection_count} sous-sections explorées dans {section}')
                                 except:
                                     pass
-                        
                         if subsection_count > 0:
-                            msg = f'Explored {subsection_count} subsections in {section}'
-                            print(msg)
-                            if status_queue:
-                                status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
+                            _sq(f'      ↳ {subsection_count} sous-sections explorées dans {section}')
+                else:
+                    _sq(f'   ⚠️ Section [{section}] HTTP {section_response.status_code}', 'warning')
             except Exception as e:
-                print(f"Could not access {section}: {e}")
+                _sq(f'   ⚠️ Impossible d\'accéder à {section} : {e}', 'warning')
         
         msg = f'Total links after exploring sections: {len(all_links)}'
         print(msg)
@@ -490,16 +504,8 @@ def scrape_municipal_website(base_url, city_name, status_queue=None, date_filter
                 
                 if matches_pattern:
                     matching_count += 1
-                    msg = f'PDF {matching_count} matches patterns: {filename[:50]}'
-                    print(msg)
-                    if status_queue:
-                        status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
-                    
-                    # DEBUG: Log date filter status
-                    debug_msg = f"DEBUG: date_filter = {date_filter}"
-                    print(debug_msg)
-                    if status_queue:
-                        status_queue.put({'status': 'running', 'message': debug_msg, 'timestamp': datetime.now().isoformat()})
+                    _sq(f'      📎 PDF détecté : {filename[:60]}')
+                    _sq(f'         URL : {full_url[:80]}')
                     
                     # Check date BEFORE downloading if date filter is active
                     # Note: Empty strings should be treated as no filter
@@ -585,21 +591,58 @@ def scrape_municipal_website(base_url, city_name, status_queue=None, date_filter
                         if status_queue:
                             status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
                     
-                    print(f"DEBUG: About to start download try block for {filename[:40]}")
                     try:
-                        msg = f'Downloading PDF: {full_url[:60]}...'
-                        print(msg)
-                        if status_queue:
-                            status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
-                        
                         time.sleep(random.uniform(1, 3))
-                        
-                        # Log PDF name before extraction
-                        print(f"[PDF] Extracting: {filename}")
+                        import time as _t2
+                        _td0 = _t2.time()
+                        _dl_resp = session.get(full_url, timeout=30)
+                        _dl_ms = int((_t2.time() - _td0) * 1000)
+                        _sq(f'         ↳ HTTP {_dl_resp.status_code} | {len(_dl_resp.content):,} octets | {_dl_ms} ms')
+                        if _dl_resp.status_code != 200:
+                            _sq(f'         ❌ Téléchargement échoué (HTTP {_dl_resp.status_code})', 'warning')
+                            continue
+
                         content = extract_pdf_content(full_url, session, status_queue)
-                        
+                        _nb_chars = len(content) if content else 0
+
+                        # Compter les pages via pdfplumber si possible
+                        _nb_pages = 0
+                        try:
+                            import pdfplumber, io as _io
+                            with pdfplumber.open(_io.BytesIO(_dl_resp.content)) as _pdf:
+                                _nb_pages = len(_pdf.pages)
+                        except Exception:
+                            pass
+
+                        if _nb_pages:
+                            _sq(f'         ↳ {_nb_pages} page(s) | {_nb_chars:,} caractères extraits')
+                        else:
+                            _sq(f'         ↳ {_nb_chars:,} caractères extraits')
+
+                        if _nb_chars < 100:
+                            _sq(f'         ⚠️ PDF probablement scanné (image) — texte non lisible', 'warning')
+
                         if content:
-                            print(f"[PDF] ✓ Successfully extracted {len(content)} chars from {filename}")
+                            # Score et décision
+                            try:
+                                from config.config_loader import get_mots_cles as _gmk2
+                                _mk2 = _gmk2()
+                                _tl = content.lower()
+                                _pts_p = sum(1 for m in _mk2.get('prioritaires',[]) if m.lower() in _tl) * 2
+                                _pts_s = sum(1 for m in _mk2.get('secondaires',[]) if m.lower() in _tl)
+                                _pts_b = sum(1 for m in _mk2.get('budget',[]) if m.lower() in _tl)
+                                _score_total = _pts_p + _pts_s + _pts_b
+                                _sq(f'         📊 Score : {_pts_p} pts prioritaires + {_pts_s} pts secondaires + {_pts_b} pts budget = {_score_total}')
+                                _mots_trouves = ([m for m in _mk2.get('prioritaires',[]) if m.lower() in _tl]
+                                                + [m for m in _mk2.get('secondaires',[]) if m.lower() in _tl]
+                                                + [m for m in _mk2.get('budget',[]) if m.lower() in _tl])
+                                if _mots_trouves:
+                                    _sq(f'         🔑 Mots trouvés : {_mots_trouves}')
+                                else:
+                                    _sq('         — Aucun mot-clé trouvé')
+                            except Exception:
+                                _score_total = 0
+
                             # Get most precise date for storage with confidence
                             doc_date, date_source, date_confidence = get_most_precise_date(filename, full_url, session)
                             
@@ -625,40 +668,33 @@ def scrape_municipal_website(base_url, city_name, status_queue=None, date_filter
                             
                             found_documents.append(document_data)
                             pdf_count += 1
+                            _sq(f'         ✅ Retenu pour analyse IA')
                         else:
-                            msg = f'[PDF] ✗ Failed to extract text from {filename} (URL: {full_url[:80]})'
-                            print(msg)
-                            if status_queue:
-                                status_queue.put({'status': 'warning', 'message': f'Failed: {filename[:50]}', 'timestamp': datetime.now().isoformat()})
+                            _sq(f'         ❌ Extraction échouée — texte vide', 'warning')
+                            _extrait_doc = ' '.join(content.split()[:50]) if content else ''
+                            if _extrait_doc:
+                                _sq(f'         Début : "{_extrait_doc}…"')
                     except Exception as e:
-                        msg = f'Error downloading {filename[:40]}: {str(e)}'
-                        print(msg)
-                        if status_queue:
-                            status_queue.put({'status': 'error', 'message': msg, 'timestamp': datetime.now().isoformat()})
+                        _sq(f'         ❌ Erreur téléchargement {filename[:40]} : {str(e)}', 'error')
         
-        msg = f'Scraping summary: {pdf_count} PDFs found, {matching_count} matched patterns, {len(found_documents)} extracted successfully'
-        print(msg)
-        if status_queue:
-            status_queue.put({'status': 'running', 'message': msg, 'timestamp': datetime.now().isoformat()})
-        
-        # Debug: Show why no documents if none found
+        # ── Bilan par site ─────────────────────────────────────────────
+        _sep = '─' * 45
+        _sq(_sep)
+        _sq(f'📊 BILAN [{city_name}]')
+        _sq(f'   🌐 Pages visitées   : {len(all_links)} liens collectés')
+        _sq(f'   📄 PDFs tentés      : {pdf_count} ({matching_count} correspondances, {len(found_documents)} extraits)')
+        _sq(f'   🔑 Docs avec mots-clés : {len(found_documents)}')
+        _sq(f'   ✅ Docs retenus     : {len(found_documents)} (score ≥ seuil)')
+        _sq(f'   ❌ Docs écartés     : {matching_count - len(found_documents)}')
+        _sq(f'   🏆 Score max atteint : (analyse IA à venir)')
+        _sq(_sep)
+
         if pdf_count == 0:
-            debug_msg = f"[DEBUG] No PDFs found. Total links checked: {len(all_links)}"
-            print(debug_msg)
-            if status_queue:
-                status_queue.put({'status': 'warning', 'message': debug_msg, 'timestamp': datetime.now().isoformat()})
-            print(f"[DEBUG] Document extensions searched: {doc_extensions}")
+            _sq(f'   ⚠️ Aucun PDF trouvé sur {len(all_links)} liens vérifiés', 'warning')
         elif matching_count == 0:
-            debug_msg = f"[DEBUG] {pdf_count} PDFs found but none matched patterns"
-            print(debug_msg)
-            if status_queue:
-                status_queue.put({'status': 'warning', 'message': debug_msg, 'timestamp': datetime.now().isoformat()})
-            print(f"[DEBUG] Patterns: {document_patterns[:3]}")
+            _sq(f'   ⚠️ {pdf_count} PDFs trouvés mais aucun ne correspond aux patterns', 'warning')
         elif len(found_documents) == 0:
-            debug_msg = f"[DEBUG] {matching_count} PDFs matched but extraction failed"
-            print(debug_msg)
-            if status_queue:
-                status_queue.put({'status': 'warning', 'message': debug_msg, 'timestamp': datetime.now().isoformat()})
+            _sq(f'   ⚠️ {matching_count} PDFs correspondants mais extraction échouée (PDFs scannés ?)', 'warning')
         
         # Extract HTML content from relevant pages
         html_count = 0
@@ -1854,6 +1890,28 @@ def run_analysis_LEGACY(config):
             })
             save_history(history)
             
+            # ── Bilan global ───────────────────────────────────────────────
+            nb_urls = len(predefined_urls) if mode != 'department' else len(target_cities if 'target_cities' in dir() else [])
+            nb_accessibles = len([d for d in documents if d.get('statut') != 'error'])
+            nb_403 = sum(1 for d in documents if d.get('erreur', '').startswith('403') or '403' in str(d.get('erreur', '')))
+            nb_vides = sum(1 for d in documents if len(d.get('texte', '')) < 100)
+            nb_scannes = sum(1 for d in documents if d.get('document_type') == 'pdf' and len(d.get('texte', '')) < 100)
+            avg_score_fmt = f"{average_score:.1f}"
+            sep = "═" * 43
+            def _glog(msg, st='running'):
+                status_queue.put({'status': st, 'message': msg, 'timestamp': datetime.now().isoformat()})
+            _glog(sep)
+            _glog("🏁 BILAN GLOBAL")
+            _glog(f"   Sites tentés           : {nb_urls}")
+            _glog(f"   Sites accessibles      : {nb_accessibles} ({round(nb_accessibles/nb_urls*100) if nb_urls else 0}% succès)")
+            _glog(f"   Sites bloqués 403      : {nb_403}")
+            _glog(f"   Sites vides (<1 ko)    : {nb_vides}")
+            _glog(f"   Total docs lus         : {total_docs}")
+            _glog(f"   PDFs scannés inutilis. : {nb_scannes}")
+            _glog(f"   Docs retenus           : {relevant_docs}")
+            _glog(f"   Score moyen            : {avg_score_fmt}")
+            _glog(sep)
+
             status_queue.put({
                 'status': 'completed',
                 'message': f'Analysis completed: {relevant_docs}/{total_docs} relevant documents kept, {deleted_count} deleted (avg score: {average_score:.1f})',
