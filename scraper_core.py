@@ -683,6 +683,7 @@ class ScraperCore:
         nb_sections = len(sources_prioritaires)
         for sec_idx, (section_url, section_type) in enumerate(sources_prioritaires, 1):
             if section_url in seen_urls:
+                _log(f"   [{sec_idx}/{nb_sections}] ⏭️ Déjà visitée : {section_url}")
                 continue
             sec_timeout = (
                 self.timeout * 2
@@ -731,8 +732,7 @@ class ScraperCore:
                     _log("      — Aucun mot-clé trouvé dans cette section")
 
                 # Bug 1 fix : créer un doc HTML si la section a un score > 0
-                if analyse_section["score"] > 0 and section_url not in seen_urls:
-                    seen_urls.add(section_url)
+                if analyse_section["score"] > 0:
                     page_soup_sec = BeautifulSoup(r.text, "html.parser")
                     date_pub_sec = self.extraire_date(
                         soup=page_soup_sec, texte=texte_section, url=section_url
@@ -782,12 +782,12 @@ class ScraperCore:
                         continue
                     if urlparse(full_url).netloc != base_netloc:
                         continue
-                    seen_urls.add(full_url)
 
                     if not self._is_document(full_url):
                         continue
 
-                    # ── PDF / Document ─────────────────────────────────────
+                    # ── PDF / Document — marquer seulement les docs, pas les pages HTML ──
+                    seen_urls.add(full_url)
                     fname = os.path.basename(urlparse(full_url).path) or full_url
                     _log(f"      📎 PDF détecté : {fname[:60]}")
                     bilan["pdfs_tentes"] += 1
@@ -1095,13 +1095,21 @@ class ScraperCore:
         url_lower = url.lower()
         return any(url_lower.endswith(ext) or ext in url_lower for ext in self.DOC_EXTENSIONS)
 
+    # URLs clairement inutiles à exclure (blacklist)
+    _HTML_BLACKLIST = [
+        "login", "logout", "signin", "sign-in", "register",
+        "cart", "panier", "checkout",
+        "mailto:", "tel:", "javascript:",
+        ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
+        ".css", ".js", ".ico", ".woff", ".ttf",
+        "facebook.com", "twitter.com", "instagram.com", "youtube.com",
+        "linkedin.com", "google.com",
+        "/feed", "/rss", "/sitemap",
+    ]
+
     def _is_relevant_html(self, url: str) -> bool:
         url_lower = url.lower()
-        html_keywords = [
-            "deliberation", "conseil", "bulletin", "energie",
-            "transition", "projet", "budget",
-        ]
-        return any(kw in url_lower for kw in html_keywords)
+        return not any(b in url_lower for b in self._HTML_BLACKLIST)
 
     def _extraire_texte_document(
         self, url: str, session: requests.Session, log_fn
